@@ -387,6 +387,7 @@
   let meMarker = null;
   let venueBounds = [];
   let poiLayer = null;
+  let poiVisible = false;   // на странице заказа рынок по умолчанию скрыт
 
   function loadAsset(tag, attrs, timeoutMs = 6000) {
     return new Promise((resolve, reject) => {
@@ -512,6 +513,14 @@
   const refreshPoi = debounce(async () => {
     if (!map || !poiLayer) return;
     const note = $('poiNote');
+
+    // Слой рынка выключен по умолчанию: гость пришёл купить обед, а точки,
+    // в которых заказать нельзя, ему только мешают выбрать.
+    if (!poiVisible) {
+      poiLayer.clearLayers();
+      if (note) note.textContent = '';
+      return;
+    }
     const zoom = map.getZoom();
     const b = map.getBounds();
     let data;
@@ -542,6 +551,15 @@
         : t('poi.shown', { n: data.shown, total: data.total });
     }
   }, 300);
+
+  function togglePoi() {
+    poiVisible = !poiVisible;
+    const btn = $('poiBtn');
+    btn.textContent = t(poiVisible ? 'poi.hide' : 'poi.show');
+    btn.setAttribute('aria-pressed', poiVisible);
+    $('poiLegend').classList.toggle('hidden', !poiVisible);
+    refreshPoi();
+  }
 
   /** Карточка точки прямо на карте: статус, дорога и переход к меню. */
   function openVenuePopup(v, marker) {
@@ -863,6 +881,7 @@
     $('repeatBtn').onclick = repeatLast;
 
     $('nearMeBtn').onclick = toggleNearMe;
+    $('poiBtn').onclick = togglePoi;
     $('geoBtn').onclick = locateMe;
     $('areaSelect').onchange = ev => applyArea(ev.target.value);
     document.querySelectorAll('#modeSwitch button').forEach(b => {

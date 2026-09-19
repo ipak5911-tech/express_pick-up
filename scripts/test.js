@@ -159,7 +159,11 @@ async function run() {
   // ---------- точки города ----------
   section('Справочные точки Алматы');
   r = await get('/api/poi?north=43.27&south=43.24&east=76.96&west=76.93&zoom=15', false);
-  ok(r.status === 200 && r.data.total > 500, `в справочнике точек города: ${r.data.total}`);
+  ok(r.status === 200 && r.data.total > 500, `подходящих по формату точек города: ${r.data.total}`);
+  ok(r.data.totalAll > r.data.total,
+    `рестораны, бары и пабы отфильтрованы: ${r.data.total} из ${r.data.totalAll}`);
+  ok(r.data.points.every(p => !['Ресторан', 'Бар', 'Паб', 'Мороженое'].includes(p.k)),
+    'в выдаче нет форматов без обеденного потока навынос');
   ok(r.data.shown > 0 && r.data.shown <= r.data.matched, `в видимой области отдано ${r.data.shown} из ${r.data.matched}`);
   ok(r.data.points.every(p => p.n && p.k && p.lat && p.lon), 'у каждой точки есть название, формат и координаты');
   ok(/ODbL/.test(r.data.license || ''), `лицензия данных указана: ${r.data.license}`);

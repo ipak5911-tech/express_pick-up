@@ -22,10 +22,11 @@
     </div>
     <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="btn btn-sm" type="button" id="nearMeBtn" data-i18n="guest.nearMe"></button>
+      <button class="btn btn-sm" type="button" id="poiBtn" aria-pressed="false" data-i18n="poi.show"></button>
       <span class="small muted" id="nearMeNote"></span>
     </div>
     <div id="venueMap" class="card" style="height:320px;padding:0;overflow:hidden;margin-bottom:6px"></div>
-    <div class="row" style="gap:14px;margin-bottom:14px;flex-wrap:wrap">
+    <div class="row hidden" id="poiLegend" style="gap:14px;margin-bottom:14px;flex-wrap:wrap">
       <span class="row tiny" style="gap:5px"><i style="width:10px;height:10px;border-radius:50%;background:var(--ok);border:2px solid #fff;box-shadow:0 0 0 1px var(--border-strong);display:block"></i><span data-i18n="poi.legendPilot"></span></span>
       <span class="row tiny" style="gap:5px"><i style="width:7px;height:7px;border-radius:50%;background:#98a2b3;display:block"></i><span data-i18n="poi.legendCity"></span></span>
       <span class="tiny faint" id="poiNote"></span>
