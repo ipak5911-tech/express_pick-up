@@ -167,6 +167,16 @@ async function run() {
   r = await get('/api/poi?north=43.4&south=43.1&east=77.1&west=76.8&zoom=11', false);
   ok(r.data.tooFar === true && r.data.shown === 0, `на мелком масштабе точки скрыты (порог зума ${r.data.minZoom})`);
 
+  // Плотность должна расти вместе с приближением — в этом и смысл постепенности
+  const density = [];
+  for (const z of [12, 14, 16]) {
+    const d = await get(`/api/poi?north=43.4&south=43.1&east=77.1&west=76.8&zoom=${z}`, false);
+    density.push({ z, shown: d.data.shown });
+  }
+  ok(density[0].shown < density[1].shown && density[1].shown < density[2].shown,
+    `точки густеют при приближении: ${density.map(d => 'зум ' + d.z + ' → ' + d.shown).join(', ')}`);
+  ok(density[0].shown > 0, 'на обзорном виде точки уже видны');
+
   r = await get('/api/poi?north=43.27&south=43.24&east=76.96&west=76.93&zoom=15&limit=10', false);
   ok(r.data.shown === 10, 'ограничение количества соблюдается');
 

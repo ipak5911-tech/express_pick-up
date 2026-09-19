@@ -419,6 +419,22 @@
     // Пределы масштаба: ниже 10 город уходит в точку и карта бесполезна,
     // выше 18 тайлы OpenStreetMap просто не существуют.
     map = L.map(host, { scrollWheelZoom: false, attributionControl: true, minZoom: 10, maxZoom: 18 });
+
+    // Колесо мыши по умолчанию выключено, иначе карта перехватывает прокрутку
+    // страницы и гость не может пролистать её дальше. Включается нажатием на
+    // карту и выключается, когда курсор с неё уходит.
+    const wheelHint = el('div', { class: 'epu-map-hint', text: t('guest.mapWheelHint') });
+    host.appendChild(wheelHint);
+    const enableWheel = () => {
+      map.scrollWheelZoom.enable();
+      wheelHint.classList.add('hidden');
+    };
+    host.addEventListener('click', enableWheel);
+    host.addEventListener('touchstart', enableWheel, { passive: true });
+    host.addEventListener('mouseleave', () => {
+      map.scrollWheelZoom.disable();
+      wheelHint.classList.remove('hidden');
+    });
     // Leaflet 1.9 вшивает в префикс атрибуции украинский флаг. Упоминание
     // библиотеки оставляем, флаг убираем. Строку © OpenStreetMap трогать
     // нельзя: их данные используются по лицензии ODbL, она требует указания.

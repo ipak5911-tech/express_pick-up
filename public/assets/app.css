@@ -376,6 +376,16 @@ table.tbl tr:last-child td { border-bottom: 0; }
 }
 .epu-pin-dot:hover { transform: scale(1.25); }
 
+/* Подсказка про колесо: карта не должна молча отказываться приближаться */
+.epu-map-hint {
+  position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
+  z-index: 500; pointer-events: none; white-space: nowrap;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--text-dim); border: 1px solid var(--border-strong);
+  border-radius: 999px; padding: 5px 13px; font-size: 12px; font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
 /* Справочные точки города: намеренно слабее — в них нельзя заказать */
 .epu-poi { background: none; border: 0; }
 .epu-poi-dot {
