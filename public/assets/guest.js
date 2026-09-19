@@ -1,6 +1,6 @@
 /* Express Pick-Up — гостевой сценарий: блюда → время → оплата */
 (function () {
-  const { api, money, hhmm, el, esc, toast, storage, mountHeader, t, loadClass, debounce } = window.EPU;
+  const { api, money, hhmm, el, esc, toast, storage, mountHeader, live, t, loadClass, debounce } = window.EPU;
 
   const state = {
     venues: [],
@@ -60,28 +60,92 @@
   }
 
   // ---------- заведения ----------
-  async function loadVenues() {
-    state.venues = await api('/api/venues');
+  /** Живой статус заведения: открыто ли и принимает ли заказы прямо сейчас. */
+  function statusBadge(v) {
+    const st = v.status;
+    if (!st) return el('span', { class: 'badge', text: v.kind });
+    if (!st.openNow) {
+      return el('span', { class: 'badge', text: t('venue.closed') });
+    }
+    return el('span', {
+      class: 'badge ' + (st.acceptingOrders ? 'badge-ok' : 'badge-warn')
+    }, [el('span', { class: 'dot' + (st.acceptingOrders ? ' pulse' : '') }), el('span', { text: t('venue.open') })]);
+  }
+
+  function statusLine(v) {
+    const st = v.status;
+    if (!st) return `${v.serviceHours.from}\u2013${v.serviceHours.to}`;
+    const parts = [];
+    if (!st.openNow) {
+      parts.push(st.opensInMinutes != null && st.opensInMinutes < 120
+        ? t('venue.opensIn', { n: st.opensInMinutes })
+        : t('venue.opensAt', { t: st.opensAt }));
+    } else if (!st.acceptingOrders) {
+      parts.push(t('venue.noSlots'));
+    } else {
+      parts.push(t('venue.nextSlot', { t: st.nextSlotLabel }));
+      parts.push(t('venue.slotsLeft', { n: st.freeSlots }));
+    }
+    if (st.closingSoon && st.closesInMinutes != null) {
+      parts.push(t('venue.closesIn', { n: st.closesInMinutes }));
+    }
+    return parts.join(' \u00b7 ');
+  }
+
+  function renderVenueList() {
     const list = $('venueList');
     list.innerHTML = '';
     for (const v of state.venues) {
+      const st = v.status || {};
+      const dim = st.openNow === false;
       list.appendChild(el('button', {
-        class: 'card', type: 'button', style: 'text-align:left;cursor:pointer',
+        class: 'card', type: 'button',
+        style: 'text-align:left;cursor:pointer' + (dim ? ';opacity:.62' : ''),
         onclick: () => selectVenue(v.id)
       }, [
         el('div', { class: 'row-between' }, [
           el('b', { text: v.name, style: 'font-size:16px' }),
-          el('span', { class: 'badge', text: v.kind })
+          statusBadge(v)
         ]),
-        el('div', { class: 'small muted', text: v.address }),
-        el('div', { class: 'tiny faint', style: 'margin-top:6px' },
-          `${t('guest.open')} ${v.serviceHours.from}–${v.serviceHours.to} · ${v.itemsAvailable}/${v.itemsTotal} ${t('guest.items')}`),
-        el('div', { class: 'tiny', style: 'margin-top:4px;color:var(--brand-text)' }, '→ ' + v.pickupPoint)
+        el('div', { class: 'small muted', text: v.kind + ' \u00b7 ' + v.address }),
+        el('div', {
+          class: 'tiny', style: 'margin-top:6px;font-weight:600;' +
+            (st.openNow === false ? 'color:var(--text-faint)'
+              : st.acceptingOrders ? 'color:var(--ok)' : 'color:var(--warn)'),
+          text: statusLine(v)
+        }),
+        el('div', { class: 'tiny faint', style: 'margin-top:3px' },
+          `${v.serviceHours.from}\u2013${v.serviceHours.to} \u00b7 ${v.itemsAvailable}/${v.itemsTotal} ${t('guest.items')}`),
+        el('div', { class: 'tiny', style: 'margin-top:4px;color:var(--brand-text)' }, '\u2192 ' + v.pickupPoint)
       ]));
     }
+  }
+
+  async function loadVenues() {
+    state.venues = await api('/api/venues');
+    renderVenueList();
+    updateMapMarkers();
     const sel = $('lookupVenue');
-    sel.innerHTML = '';
-    for (const v of state.venues) sel.appendChild(el('option', { value: v.id, text: v.name }));
+    if (sel.options.length !== state.venues.length) {
+      sel.innerHTML = '';
+      for (const v of state.venues) sel.appendChild(el('option', { value: v.id, text: v.name }));
+    }
+  }
+
+  /**
+   * Наблюдение за заведениями в реальном времени.
+   * Событий недостаточно: открытие и закрытие происходят по часам, а не по
+   * действию пользователя, поэтому нужен и таймер, и поток событий.
+   */
+  function watchVenues() {
+    const refresh = async () => {
+      if (state.venue) return; // на экране заказа список не нужен
+      try { await loadVenues(); } catch (e) { /* сеть моргнула — попробуем позже */ }
+    };
+    setInterval(refresh, 30000);
+    live(null, ev => {
+      if (['order_created', 'order_status', 'settings_updated', 'menu_updated'].includes(ev.type)) refresh();
+    });
   }
 
   async function selectVenue(id) {
@@ -293,12 +357,15 @@
   // карта молча исчезает, а выбор заведения остаётся списком: экраны кухни и
   // выдачи от внешних ресурсов не зависят вовсе.
 
-  function loadAsset(tag, attrs) {
+  let mapMarkers = {};
+
+  function loadAsset(tag, attrs, timeoutMs = 6000) {
     return new Promise((resolve, reject) => {
       const node = document.createElement(tag);
+      node.onload = () => { clearTimeout(timer); resolve(); };
+      node.onerror = () => { clearTimeout(timer); reject(new Error('asset_failed')); };
+      const timer = setTimeout(() => reject(new Error('asset_timeout')), timeoutMs);
       Object.assign(node, attrs);
-      node.onload = resolve;
-      node.onerror = reject;
       document.head.appendChild(node);
     });
   }
@@ -306,8 +373,11 @@
   async function initMap() {
     const host = $('venueMap');
     if (!host) return;
+    // Стиль грузим без ожидания: без него карта выглядит хуже, но работает.
+    // Ждём только скрипт — без него строить нечего.
+    loadAsset('link', { rel: 'stylesheet', href: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css' })
+      .catch(() => { /* карта переживёт */ });
     try {
-      await loadAsset('link', { rel: 'stylesheet', href: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css' });
       await loadAsset('script', { src: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' });
     } catch (e) {
       host.remove();
@@ -324,6 +394,7 @@
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
+    mapMarkers = {};
     const bounds = [];
     for (const v of points) {
       // iconSize: null — иначе Leaflet обрежет подпись до размера иконки по умолчанию
@@ -332,13 +403,30 @@
         iconSize: null,
         html: `<span class="epu-pin-dot"></span><span class="epu-pin-label">${esc(v.name)}</span>`
       });
-      L.marker([v.location.lat, v.location.lon], { icon })
+      const marker = L.marker([v.location.lat, v.location.lon], { icon })
         .addTo(map)
         .on('click', () => selectVenue(v.id));
+      mapMarkers[v.id] = marker;
       bounds.push([v.location.lat, v.location.lon]);
     }
     map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 });
     setTimeout(() => map.invalidateSize(), 120);
+    updateMapMarkers();
+  }
+
+  /** Точка на карте показывает, принимает ли заведение заказы сейчас. */
+  function updateMapMarkers() {
+    for (const v of state.venues) {
+      const marker = mapMarkers[v.id];
+      if (!marker || !marker.getElement) continue;
+      const node = marker.getElement();
+      if (!node) continue;
+      const dot = node.querySelector('.epu-pin-dot');
+      if (!dot) continue;
+      const st = v.status || {};
+      dot.style.background = st.openNow === false ? 'var(--text-faint)'
+        : st.acceptingOrders ? 'var(--ok)' : 'var(--warn)';
+    }
   }
 
   // ---------- дорога гостя ----------
@@ -657,7 +745,10 @@
     try {
       await loadVenues();
       await loadAreas();
-      initMap();
+      watchVenues();
+      // Карта — украшение поверх списка: грузим её в фоне, чтобы медленный или
+      // недоступный CDN не задерживал живые статусы заведений.
+      initMap().catch(() => { const m = $('venueMap'); if (m) m.remove(); });
       const saved = storage.get('venueId', null);
       const preset = window.EPU.qs('venue') || saved;
       if (preset && state.venues.some(v => v.id === preset)) await selectVenue(preset);

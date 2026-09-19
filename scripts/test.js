@@ -105,7 +105,7 @@ async function run() {
 
   // ---------- ёмкость слотов ----------
   section('Производственная ёмкость');
-  const heavy = { items: [{ itemId: 'c-chicken', qty: 4, options: [] }, { itemId: 'c-fish', qty: 3, options: [] }] };
+  const heavy = { items: [{ itemId: 'c-chicken', qty: 4, options: [] }, { itemId: 'c-beshbarmak', qty: 3, options: [] }] };
   r = await post(`/api/venues/${venueId}/slots`, heavy, false);
   ok(r.data.tooLarge === true, `заказ на ${Math.round(r.data.workSeconds / 60)} мин работы не помещается в окно приготовления`);
 
@@ -151,7 +151,7 @@ async function run() {
   ok(r.status === 201, `заказ создан: №${r.data.order.code} на ${slot.label}`);
   const token = r.data.order.token;
   const code = r.data.order.code;
-  ok(r.data.order.total === 350, `цена в тенге: ${r.data.order.total}`);
+  ok(r.data.order.total === 250, `цена в тенге: ${r.data.order.total}`);
 
   r = await get('/api/orders/' + token, false);
   ok(r.data.status === 'new' && r.data.paymentStatus === 'paid', 'статус и оплата записаны');

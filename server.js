@@ -143,6 +143,7 @@ function venuePublic(v) {
   return {
     id: v.id, name: v.name, kind: v.kind, address: v.address, pickupPoint: v.pickupPoint,
     location: v.location,
+    status: capacity.venueStatus(v, store.orders(), Date.now()),
     settings: {
       slotMinutes: v.settings.slotMinutes,
       minLeadMinutes: v.settings.minLeadMinutes,
@@ -276,7 +277,8 @@ async function handleApi(req, res, pathname, query) {
       location: v.location,
       serviceHours: v.settings.serviceHours,
       itemsAvailable: v.menu.filter(i => i.available).length,
-      itemsTotal: v.menu.length
+      itemsTotal: v.menu.length,
+      status: capacity.venueStatus(v, store.orders(), now)
     })));
   }
 
