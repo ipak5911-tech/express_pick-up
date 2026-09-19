@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Express Pick-Up — панель заведения</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e8590c'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'%3EE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<header id="topbar"></header>
+<main class="wrap-wide">
+  <div class="row-between" style="margin:18px 0 12px;flex-wrap:wrap;gap:10px">
+    <div>
+      <h1 style="margin:0" data-i18n="admin.h"></h1>
+      <div class="small muted" id="venueLine"></div>
+    </div>
+    <select id="venueSelect" style="max-width:250px"></select>
+  </div>
+
+  <div class="menu-cats" id="tabs">
+    <button type="button" data-tab="metrics" data-i18n="admin.tabMetrics" aria-pressed="true"></button>
+    <button type="button" data-tab="menu" data-i18n="admin.tabMenu"></button>
+    <button type="button" data-tab="capacity" data-i18n="admin.tabCapacity"></button>
+    <button type="button" data-tab="demo" data-i18n="admin.tabDemo"></button>
+  </div>
+
+  <!-- Метрики -->
+  <section id="tab-metrics">
+    <div class="grid grid-3" id="kpiGrid"></div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="row-between">
+        <h3 style="margin:0" data-i18n="admin.histogram"></h3>
+        <div class="row" style="gap:12px">
+          <span class="row tiny" style="gap:5px"><i style="width:9px;height:9px;border-radius:2px;background:var(--brand);display:block"></i><span data-i18n="admin.histExpress"></span></span>
+          <span class="row tiny" style="gap:5px"><i style="width:9px;height:9px;border-radius:2px;background:var(--border-strong);display:block"></i><span data-i18n="admin.histCounter"></span></span>
+        </div>
+      </div>
+      <div class="bars" id="histogram"></div>
+      <div class="row" id="histLabels" style="gap:3px"></div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="admin.late"></h3>
+      <div id="lateBox"></div>
+    </div>
+  </section>
+
+  <!-- Меню -->
+  <section id="tab-menu" class="hidden">
+    <div class="card">
+      <table class="tbl">
+        <thead><tr>
+          <th data-i18n="admin.menuItem"></th>
+          <th style="width:110px" data-i18n="admin.menuPrice"></th>
+          <th style="width:110px" data-i18n="admin.menuPrep"></th>
+          <th style="width:110px" data-i18n="admin.menuAvail"></th>
+        </tr></thead>
+        <tbody id="menuBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Ёмкость -->
+  <section id="tab-capacity" class="hidden">
+    <div class="card">
+      <h3 data-i18n="admin.capacity"></h3>
+      <p class="small muted" style="margin:0 0 12px" data-i18n="admin.capacityDesc"></p>
+      <div class="grid grid-3" id="settingsGrid"></div>
+      <div class="row-between" style="margin-top:14px;flex-wrap:wrap;gap:10px">
+        <span class="badge badge-brand" id="capacityResult"></span>
+        <button class="btn btn-primary" id="saveSettings" data-i18n="common.save"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Демо -->
+  <section id="tab-demo" class="hidden">
+    <div class="card">
+      <p class="small muted" style="margin:0 0 12px" data-i18n="admin.demoDesc"></p>
+      <label class="switch" style="margin-bottom:14px">
+        <input type="checkbox" id="autoKitchen">
+        <span class="track"></span>
+        <span data-i18n="admin.autoKitchen"></span>
+      </label>
+      <div class="grid grid-2">
+        <button class="btn" id="demoRush" data-i18n="admin.demoRush"></button>
+        <button class="btn" id="demoCounter" data-i18n="admin.demoCounter"></button>
+        <button class="btn" id="demoHistory" data-i18n="admin.demoHistory"></button>
+        <button class="btn btn-danger" id="demoReset" data-i18n="admin.demoReset"></button>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="/assets/i18n.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/admin.js"></script>
+</body>
+</html>

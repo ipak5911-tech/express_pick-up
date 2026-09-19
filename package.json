@@ -1,0 +1,14 @@
+{
+  "name": "express-pick-up",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Express Pick-Up — предзаказ еды к точному времени: слоты выдачи, диспетчеризация кухни, отдельная точка выдачи",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "demo": "node scripts/seed-demo.js && node server.js",
+    "reset": "node scripts/seed-demo.js --fresh"
+  },
+  "engines": { "node": ">=16" },
+  "license": "MIT"
+}

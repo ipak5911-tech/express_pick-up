@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ru" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Express Pick-Up</title>
+<meta name="description" content="Предзаказ еды к точному времени: три шага, без регистрации, отдельная точка выдачи.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e8590c'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'%3EE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<header id="topbar"></header>
+
+<main class="wrap">
+  <!-- ШАГ 0: выбор заведения -->
+  <section id="venueView">
+    <h1 data-i18n="guest.h1"></h1>
+    <p class="lede" data-i18n="guest.lede"></p>
+    <h2 data-i18n="guest.pickVenue"></h2>
+    <div id="venueList" class="grid grid-2"></div>
+
+    <div class="card" style="margin-top:22px">
+      <h3 data-i18n="lookup.h"></h3>
+      <p class="small muted" style="margin:0 0 10px" data-i18n="lookup.desc"></p>
+      <form id="lookupForm" class="row" style="gap:8px">
+        <select id="lookupVenue" style="max-width:220px"></select>
+        <input type="text" id="lookupCode" inputmode="numeric" data-i18n-ph="lookup.ph" style="max-width:150px">
+        <button class="btn btn-primary" type="submit" data-i18n="lookup.go"></button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ЗАКАЗ: три шага -->
+  <section id="orderView" class="hidden">
+    <div class="row-between" style="margin-top:18px">
+      <div>
+        <div id="venueName" style="font-weight:700;font-size:18px"></div>
+        <div id="venuePoint" class="tiny faint"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="changeVenue" data-i18n="guest.changeVenue"></button>
+    </div>
+
+    <div class="steps" id="steps">
+      <div class="step active" data-step="1"><span class="step-num">1</span><b data-i18n="guest.step1"></b></div>
+      <div class="step" data-step="2"><span class="step-num">2</span><b data-i18n="guest.step2"></b></div>
+      <div class="step" data-step="3"><span class="step-num">3</span><b data-i18n="guest.step3"></b></div>
+    </div>
+
+    <!-- Шаг 1 -->
+    <div id="step1">
+      <div class="row-between" style="margin-bottom:6px">
+        <h2 style="margin:0" data-i18n="guest.menu"></h2>
+        <button class="btn btn-sm hidden" id="repeatBtn" data-i18n="guest.repeatLast"></button>
+      </div>
+      <div class="menu-cats" id="cats"></div>
+      <div class="card" id="menuList"></div>
+    </div>
+
+    <!-- Шаг 2 -->
+    <div id="step2" class="hidden">
+      <h2 data-i18n="slots.h"></h2>
+      <p class="lede" data-i18n="slots.lede"></p>
+      <div class="card">
+        <div class="row-between" style="margin-bottom:10px">
+          <span class="small muted" id="workloadNote"></span>
+          <span class="badge badge-brand" id="slotChosen" hidden></span>
+        </div>
+        <div class="slots" id="slotGrid"></div>
+        <div class="empty hidden" id="slotEmpty" data-i18n="slots.none"></div>
+      </div>
+
+      <div class="card">
+        <h3 data-i18n="slots.contacts"></h3>
+        <div class="grid grid-2" style="margin-top:8px">
+          <div>
+            <label class="field" for="guestName" data-i18n="slots.name"></label>
+            <input type="text" id="guestName" data-i18n-ph="slots.namePh" autocomplete="given-name">
+          </div>
+          <div>
+            <label class="field" for="guestPhone" data-i18n="slots.phone"></label>
+            <input type="tel" id="guestPhone" data-i18n-ph="slots.phonePh" autocomplete="tel">
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label class="field" for="guestComment" data-i18n="slots.comment"></label>
+          <input type="text" id="guestComment" data-i18n-ph="slots.commentPh">
+        </div>
+      </div>
+    </div>
+
+    <!-- Шаг 3 -->
+    <div id="step3" class="hidden">
+      <h2 data-i18n="pay.h"></h2>
+      <div class="card">
+        <h3 data-i18n="pay.summary"></h3>
+        <div id="paySummary"></div>
+        <div class="sep"></div>
+        <div class="row-between">
+          <b data-i18n="common.total"></b>
+          <b id="payTotal" class="num"></b>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:12px">
+        <button class="card" id="payOnline" type="button" style="text-align:left;cursor:pointer">
+          <div class="row-between"><b data-i18n="pay.online"></b><span class="badge badge-brand" id="onlineMark">✓</span></div>
+          <div class="small muted" data-i18n="pay.onlineDesc"></div>
+        </button>
+        <button class="card" id="payOnsite" type="button" style="text-align:left;cursor:pointer">
+          <div class="row-between"><b data-i18n="pay.onsite"></b><span class="badge badge-brand hidden" id="onsiteMark">✓</span></div>
+          <div class="small muted" data-i18n="pay.onsiteDesc"></div>
+        </button>
+      </div>
+      <p class="tiny faint" style="margin-top:12px" data-i18n="pay.noReg"></p>
+    </div>
+  </section>
+</main>
+
+<div class="cart-bar hidden" id="cartBar">
+  <div class="cart-bar-inner">
+    <button class="btn btn-ghost btn-sm hidden" id="backBtn" data-i18n="common.back"></button>
+    <div style="flex:1 1 auto;min-width:0">
+      <div class="small muted" id="cartCount"></div>
+      <div style="font-weight:750;font-size:17px" id="cartTotal" class="num"></div>
+    </div>
+    <button class="btn btn-primary btn-lg" id="mainBtn"></button>
+  </div>
+</div>
+
+<!-- Модификаторы -->
+<dialog id="modDialog" style="border:0;border-radius:16px;padding:0;max-width:420px;width:92vw;background:var(--surface);color:var(--text)">
+  <form method="dialog" style="padding:18px">
+    <div class="row-between" style="margin-bottom:4px">
+      <b id="modName" style="font-size:17px"></b>
+      <button class="btn btn-ghost btn-sm" value="cancel" type="submit">✕</button>
+    </div>
+    <div class="small faint" id="modDesc" style="margin-bottom:10px"></div>
+    <div id="modGroups"></div>
+    <div class="row" style="margin-top:14px;gap:10px">
+      <div class="qty">
+        <button type="button" id="modMinus">−</button><span id="modQty">1</span><button type="button" id="modPlus">+</button>
+      </div>
+      <button class="btn btn-primary" style="flex:1" id="modAdd" type="button"></button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Демо-оплата -->
+<dialog id="payDialog" style="border:0;border-radius:16px;padding:0;max-width:380px;width:92vw;background:var(--surface);color:var(--text)">
+  <div style="padding:18px">
+    <div class="row-between" style="margin-bottom:12px">
+      <b style="font-size:17px" data-i18n="pay.online"></b>
+      <button class="btn btn-ghost btn-sm" id="payClose" type="button">✕</button>
+    </div>
+    <label class="field" data-i18n="pay.card"></label>
+    <input type="text" id="cardNumber" value="4400 0000 0000 0000" inputmode="numeric">
+    <div class="row" style="margin-top:10px;gap:10px">
+      <div style="flex:1"><label class="field" data-i18n="pay.exp"></label><input type="text" id="cardExp" value="12/29"></div>
+      <div style="flex:1"><label class="field" data-i18n="pay.cvc"></label><input type="text" id="cardCvc" value="123"></div>
+    </div>
+    <button class="btn btn-primary btn-block btn-lg" id="payNow" style="margin-top:14px"></button>
+    <p class="tiny faint" style="margin:10px 0 0;text-align:center" data-i18n="pay.demo"></p>
+  </div>
+</dialog>
+
+<script src="/assets/i18n.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/guest.js"></script>
+</body>
+</html>
