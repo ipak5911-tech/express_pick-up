@@ -385,6 +385,7 @@
   let mapMarkers = {};
   let map = null;
   let meMarker = null;
+  let venueBounds = [];
 
   function loadAsset(tag, attrs, timeoutMs = 6000) {
     return new Promise((resolve, reject) => {
@@ -415,6 +416,10 @@
     if (!points.length) { host.remove(); return; }
 
     map = L.map(host, { scrollWheelZoom: false, attributionControl: true });
+    // Leaflet 1.9 вшивает в префикс атрибуции украинский флаг. Упоминание
+    // библиотеки оставляем, флаг убираем. Строку © OpenStreetMap трогать
+    // нельзя: их данные используются по лицензии ODbL, она требует указания.
+    map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
 
     // Подложка — единственное, что ещё грузится извне. Если тайлы не приходят,
     // карта остаётся рабочей (точки на своих местах), но гость должен понимать,
@@ -455,10 +460,23 @@
       mapMarkers[v.id] = marker;
       bounds.push([v.location.lat, v.location.lon]);
     }
-    map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 });
-    setTimeout(() => map.invalidateSize(), 120);
+    venueBounds = bounds;
+    fitAll();
+    setTimeout(() => { map.invalidateSize(); fitAll(); }, 120);
     updateMapMarkers();
     updateMeMarker();
+  }
+
+  /**
+   * Рамка карты охватывает все точки питания и, если она известна, позицию
+   * гостя. Иначе после определения геолокации половина заведений уезжает за
+   * край, и сравнить «что ко мне ближе» становится невозможно.
+   */
+  function fitAll() {
+    if (!map || !venueBounds.length) return;
+    const points = venueBounds.slice();
+    if (state.from) points.push([state.from.lat, state.from.lon]);
+    map.fitBounds(points, { padding: [42, 42], maxZoom: 15 });
   }
 
   /** Карточка точки прямо на карте: статус, дорога и переход к меню. */
@@ -528,6 +546,7 @@
       state.from = null;
       storage.del('areaId');
       updateMeMarker();
+      fitAll();
       btn.textContent = t('guest.nearMe');
       note.textContent = '';
       await loadVenues();
@@ -544,7 +563,7 @@
         note.textContent = t('guest.nearMeOn');
         await loadVenues();
         updateMeMarker();
-        if (map) map.setView([state.from.lat, state.from.lon], map.getZoom());
+        fitAll();
       },
       () => {
         btn.disabled = false;
@@ -594,6 +613,7 @@
         $('areaSelect').value = '';
         storage.set('areaId', '');
         updateMeMarker();
+        fitAll();
         if (state.step === 2) loadSlots();
       },
       () => {
