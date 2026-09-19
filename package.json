@@ -7,8 +7,11 @@
   "scripts": {
     "start": "node server.js",
     "demo": "node scripts/seed-demo.js && node server.js",
-    "reset": "node scripts/seed-demo.js --fresh"
+    "reset": "node scripts/seed-demo.js --fresh",
+    "test": "node scripts/test.js"
   },
-  "engines": { "node": ">=16" },
+  "engines": {
+    "node": ">=16"
+  },
   "license": "MIT"
 }

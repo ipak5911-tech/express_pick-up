@@ -608,11 +608,30 @@
       const venueId = $('lookupVenue').value;
       const code = $('lookupCode').value.trim();
       if (!code) return;
+      const host = $('lookupResult');
+      host.innerHTML = '';
       try {
         const res = await api(`/api/lookup?venue=${encodeURIComponent(venueId)}&code=${encodeURIComponent(code)}`);
-        location.href = '/o/' + res.token;
+        const labels = {
+          new: 'order.accepted', cooking: 'order.cooking', ready: 'order.ready',
+          picked_up: 'order.picked', cancelled: 'order.cancelled', no_show: 'order.noShow'
+        };
+        host.appendChild(el('div', {
+          class: 'card', style: res.status === 'ready' ? 'border-color:var(--ok)' : ''
+        }, [
+          el('div', { class: 'row-between' }, [
+            el('b', { style: 'font-size:26px;font-variant-numeric:tabular-nums', text: res.code }),
+            el('span', {
+              class: 'badge ' + (res.status === 'ready' ? 'badge-ok' : 'badge-brand'),
+              text: t(labels[res.status] || 'order.accepted')
+            })
+          ]),
+          el('div', { class: 'small muted', style: 'margin-top:6px', text: t('order.pickupAt', { t: hhmm(res.slotStart) }) }),
+          res.venue ? el('div', { class: 'tiny faint', text: res.venue.pickupPoint }) : null,
+          el('div', { class: 'tiny faint', style: 'margin-top:10px', text: t('lookup.privateHint') })
+        ]));
       } catch (e) {
-        toast(t('lookup.fail'), true);
+        toast(e.error === 'too_many_lookups' ? e.message : t('lookup.fail'), true);
       }
     };
 

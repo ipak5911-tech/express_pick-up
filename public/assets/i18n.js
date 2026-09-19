@@ -300,7 +300,8 @@
     'lookup.desc': 'Введите номер заказа — статус откроется без регистрации.',
     'lookup.ph': 'Номер заказа',
     'lookup.go': 'Открыть статус',
-    'lookup.fail': 'Заказ с таким номером не найден'
+    'lookup.fail': 'Заказ с таким номером не найден',
+    'lookup.privateHint': 'По номеру виден только статус. Чтобы отменить заказ или включить уведомление, откройте ссылку из заказа или отсканируйте QR-код.'
   };
 
   const EN = {
@@ -603,7 +604,8 @@
     'lookup.desc': 'Enter the order number — the status opens without sign-up.',
     'lookup.ph': 'Order number',
     'lookup.go': 'Open status',
-    'lookup.fail': 'No order with that number'
+    'lookup.fail': 'No order with that number',
+    'lookup.privateHint': 'The number shows status only. To cancel or enable alerts, open the order link or scan the QR code.'
   };
 
   const DICTS = { ru: RU, en: EN };

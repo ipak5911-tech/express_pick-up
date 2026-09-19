@@ -35,12 +35,37 @@ const MIME = {
 };
 
 // ---------- инициализация данных ----------
+/**
+ * Стартовые данные и миграция существующей базы.
+ *
+ * База переживает обновления кода, поэтому новые поля (координаты заведения,
+ * таймаут неявки) нужно дописывать в уже сохранённые записи. Без этого
+ * обновление ломает сервис на живых данных, хотя на чистой базе всё работает.
+ */
 function ensureSeed() {
   const db = store.load();
   if (!db.venues.length) {
     db.venues = seed.seedVenues();
     store.save({ type: 'seeded' });
     console.log('Загружены стартовые данные: 3 заведения');
+    return;
+  }
+
+  const defaults = seed.seedVenues();
+  let migrated = 0;
+  for (const venue of db.venues) {
+    const template = defaults.find(v => v.id === venue.id);
+    if (!venue.location && template) { venue.location = template.location; migrated++; }
+    for (const key of Object.keys(seed.DEFAULT_SETTINGS)) {
+      if (venue.settings[key] === undefined) {
+        venue.settings[key] = seed.DEFAULT_SETTINGS[key];
+        migrated++;
+      }
+    }
+  }
+  if (migrated) {
+    store.save({ type: 'migrated' });
+    console.log(`Миграция базы: дописано полей — ${migrated}`);
   }
 }
 
@@ -131,6 +156,31 @@ function venuePublic(v) {
     }))
   };
 }
+
+// ---------- ограничение перебора ----------
+// Номера заказов короткие и последовательные, поэтому поиск по номеру
+// обязан быть дорогим для перебора.
+const lookupHits = new Map();
+const LOOKUP_LIMIT = 15;
+const LOOKUP_WINDOW_MS = 10 * 60 * 1000;
+
+function lookupAllowed(req) {
+  const ip = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const now = Date.now();
+  const entry = lookupHits.get(ip);
+  if (!entry || now > entry.resetAt) {
+    lookupHits.set(ip, { count: 1, resetAt: now + LOOKUP_WINDOW_MS });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= LOOKUP_LIMIT;
+}
+
+// чистим карту, чтобы она не росла бесконечно
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of lookupHits) if (now > entry.resetAt) lookupHits.delete(ip);
+}, 5 * 60 * 1000).unref();
 
 // ---------- доступ персонала ----------
 const STAFF_PREFIXES = ['/api/kitchen', '/api/pickup', '/api/admin', '/api/demo', '/api/staff'];
@@ -319,11 +369,16 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, orders.publicView(o, store.venue(o.venueId)));
   }
 
-  // GET /api/lookup?venue=...&code=...
+  // GET /api/lookup?venue=...&code=... — публичный статус по номеру.
+  // Токен здесь НЕ выдаётся: иначе перебор трёхзначных номеров открывал бы
+  // чужие заказы вместе с именем, составом и возможностью их отменить.
   if (method === 'GET' && pathname === '/api/lookup') {
+    if (!lookupAllowed(req)) {
+      return sendError(res, 429, 'too_many_lookups', 'Слишком много попыток. Попробуйте позже');
+    }
     const o = store.orderByCode(query.venue, query.code || '');
     if (!o) return sendError(res, 404, 'unknown_order', 'Заказ не найден');
-    return sendJson(res, 200, { token: o.token });
+    return sendJson(res, 200, orders.publicSummary(o, store.venue(o.venueId)));
   }
 
   // GET /api/kitchen/:venueId
@@ -410,18 +465,49 @@ async function handleApi(req, res, pathname, query) {
     const v = store.venue(seg[2]);
     if (!v) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');
     const body = await readBody(req);
-    const numeric = ['slotMinutes', 'horizonMinutes', 'minLeadMinutes', 'kitchenThroughputPerMin',
-      'digitalSharePct', 'maxOrdersPerSlot', 'maxEarlyCookSlots', 'graceSeconds',
-      'baselineWaitSeconds', 'baselineOrdersPerHour'];
-    for (const key of numeric) {
-      if (body[key] != null && Number.isFinite(Number(body[key]))) v.settings[key] = Number(body[key]);
+    // Каждая настройка участвует в расчётах ёмкости: ноль в мощности кухни
+    // или отрицательный лимит выдач ломают арифметику слотов молча.
+    const BOUNDS = {
+      slotMinutes: [1, 30],
+      horizonMinutes: [15, 600],
+      minLeadMinutes: [0, 120],
+      kitchenThroughputPerMin: [1, 5000],
+      digitalSharePct: [1, 100],
+      maxOrdersPerSlot: [1, 100],
+      maxEarlyCookSlots: [1, 48],
+      graceSeconds: [0, 3600],
+      noShowAfterMinutes: [1, 240],
+      baselineWaitSeconds: [0, 7200],
+      baselineOrdersPerHour: [1, 1000]
+    };
+    const rejected = [];
+    for (const key of Object.keys(BOUNDS)) {
+      if (body[key] == null) continue;
+      const value = Number(body[key]);
+      const [min, max] = BOUNDS[key];
+      if (!Number.isFinite(value) || value < min || value > max) {
+        rejected.push({ key, min, max });
+        continue;
+      }
+      v.settings[key] = value;
     }
     if (typeof body.autoKitchen === 'boolean') v.settings.autoKitchen = body.autoKitchen;
-    if (body.serviceHours && body.serviceHours.from && body.serviceHours.to) {
-      v.settings.serviceHours = { from: String(body.serviceHours.from), to: String(body.serviceHours.to) };
+
+    const HM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (body.serviceHours) {
+      const from = String(body.serviceHours.from || '');
+      const to = String(body.serviceHours.to || '');
+      const minutes = hm => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
+      if (!HM.test(from) || !HM.test(to) || minutes(to) <= minutes(from)) {
+        rejected.push({ key: 'serviceHours' });
+      } else {
+        v.settings.serviceHours = { from, to };
+      }
     }
-    v.settings.slotMinutes = Math.max(1, Math.min(30, v.settings.slotMinutes));
-    v.settings.digitalSharePct = Math.max(5, Math.min(100, v.settings.digitalSharePct));
+
+    if (rejected.length) {
+      return sendError(res, 400, 'bad_settings', 'Недопустимые значения настроек', { rejected });
+    }
     store.save({ type: 'settings_updated', venueId: v.id });
     return sendJson(res, 200, { settings: v.settings, capacityPerSlotSeconds: capacity.slotCapacitySeconds(v.settings) });
   }
@@ -489,9 +575,19 @@ function serveFile(res, filePath) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const parsed = url.parse(req.url, true);
-  const pathname = decodeURIComponent(parsed.pathname);
-  const query = parsed.query;
+  let pathname;
+  let query;
+  try {
+    // decodeURIComponent бросает URIError на битом проценте («/%E0%A4%A»).
+    // Раньше это происходило вне try и валило весь процесс: один запрос —
+    // и сервис лежит. Разбор адреса обязан быть внутри защищённого блока.
+    const parsed = url.parse(req.url, true);
+    pathname = decodeURIComponent(parsed.pathname);
+    query = parsed.query;
+  } catch (e) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Некорректный адрес');
+  }
 
   try {
     if (pathname === '/api/stream') return sseHandler(req, res, query);
@@ -532,6 +628,16 @@ function localAddresses() {
   return out;
 }
 
+// Последний рубеж. Любая необработанная ошибка в одном запросе не должна
+// снимать сервис со всех экранов заведения: логируем громко и продолжаем.
+// Это страховка, а не замена обработке ошибок в обработчиках.
+process.on('uncaughtException', err => {
+  console.error('[uncaughtException] сервис продолжает работу:', err && err.stack || err);
+});
+process.on('unhandledRejection', err => {
+  console.error('[unhandledRejection] сервис продолжает работу:', err && err.stack || err);
+});
+
 if (require.main === module) {
   ensureSeed();
   server.listen(PORT, () => {
@@ -544,6 +650,19 @@ if (require.main === module) {
     console.log(`  Кухня      http://localhost:${PORT}/kitchen  (код ${STAFF_PIN})`);
     console.log(`  Выдача     http://localhost:${PORT}/pickup`);
     console.log(`  Панель     http://localhost:${PORT}/admin\n`);
+
+    // Расчёты слотов, часов работы и пробок идут в локальном поясе сервера.
+    // Если сервис развёрнут не в том городе, где стоит касса, время поедет.
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'не определён';
+    const offset = -new Date().getTimezoneOffset() / 60;
+    console.log(`  Часовой пояс сервера: ${tz} (UTC${offset >= 0 ? '+' : ''}${offset}).`);
+    console.log('  Слоты и часы работы считаются в нём — он должен совпадать с поясом заведения.');
+    if (STAFF_PIN === '2468') {
+      console.log('  ВНИМАНИЕ: используется демонстрационный код персонала 2468.');
+      console.log('  Для реального заведения задайте свой: STAFF_PIN=... node server.js\n');
+    } else {
+      console.log('');
+    }
   });
 }
 
