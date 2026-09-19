@@ -16,6 +16,7 @@ const orders = require('./lib/orders');
 const analytics = require('./lib/analytics');
 const qr = require('./lib/qr');
 const geo = require('./lib/geo');
+const poi = require('./lib/poi');
 
 const PORT = Number(process.env.PORT) || 3000;
 // Экраны кухни, выдачи и панели закрыты коротким кодом. Это не полноценная
@@ -263,6 +264,18 @@ async function handleApi(req, res, pathname, query) {
       walkKmh: geo.WALK_KMH,
       source: 'model'
     });
+  }
+
+  // GET /api/poi?north=&south=&east=&west=&zoom=
+  // Реальные точки общепита Алматы из OpenStreetMap — фон рынка вокруг пилота.
+  // Отдаются только попавшие в видимую область и только начиная с масштаба,
+  // на котором их можно различить: иначе это тысяча точек в одном пикселе.
+  if (method === 'GET' && pathname === '/api/poi') {
+    return sendJson(res, 200, poi.inBounds({
+      north: Number(query.north), south: Number(query.south),
+      east: Number(query.east), west: Number(query.west),
+      zoom: Number(query.zoom), limit: Number(query.limit)
+    }));
   }
 
   // GET /api/areas — районы Алматы для оценки времени в пути без геолокации

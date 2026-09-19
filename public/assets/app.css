@@ -376,6 +376,15 @@ table.tbl tr:last-child td { border-bottom: 0; }
 }
 .epu-pin-dot:hover { transform: scale(1.25); }
 
+/* Справочные точки города: намеренно слабее — в них нельзя заказать */
+.epu-poi { background: none; border: 0; }
+.epu-poi-dot {
+  display: block; width: 100%; height: 100%; border-radius: 50%;
+  background: #98a2b3; opacity: .78; cursor: help;
+  transition: transform .12s ease, opacity .12s ease;
+}
+.epu-poi-dot:hover { transform: scale(1.7); opacity: 1; }
+
 /* Карта без подложки: точки на местах, но гость должен понимать почему */
 .epu-map-note {
   position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);

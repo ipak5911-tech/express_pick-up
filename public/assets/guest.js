@@ -386,6 +386,7 @@
   let map = null;
   let meMarker = null;
   let venueBounds = [];
+  let poiLayer = null;
 
   function loadAsset(tag, attrs, timeoutMs = 6000) {
     return new Promise((resolve, reject) => {
@@ -415,7 +416,9 @@
     const points = state.venues.filter(v => v.location);
     if (!points.length) { host.remove(); return; }
 
-    map = L.map(host, { scrollWheelZoom: false, attributionControl: true });
+    // Пределы масштаба: ниже 10 город уходит в точку и карта бесполезна,
+    // выше 18 тайлы OpenStreetMap просто не существуют.
+    map = L.map(host, { scrollWheelZoom: false, attributionControl: true, minZoom: 10, maxZoom: 18 });
     // Leaflet 1.9 вшивает в префикс атрибуции украинский флаг. Упоминание
     // библиотеки оставляем, флаг убираем. Строку © OpenStreetMap трогать
     // нельзя: их данные используются по лицензии ODbL, она требует указания.
@@ -460,8 +463,12 @@
       mapMarkers[v.id] = marker;
       bounds.push([v.location.lat, v.location.lon]);
     }
+    poiLayer = L.layerGroup().addTo(map);
+    map.on('moveend zoomend', refreshPoi);
+
     venueBounds = bounds;
     fitAll();
+    refreshPoi();
     setTimeout(() => { map.invalidateSize(); fitAll(); }, 120);
     updateMapMarkers();
     updateMeMarker();
@@ -478,6 +485,47 @@
     if (state.from) points.push([state.from.lat, state.from.lon]);
     map.fitBounds(points, { padding: [42, 42], maxZoom: 15 });
   }
+
+  /**
+   * Справочные точки общепита Алматы из OpenStreetMap.
+   *
+   * Их полторы тысячи, поэтому рисуются только те, что попали в видимую
+   * область, и только начиная с масштаба, на котором их можно различить.
+   * Визуально они намеренно слабее точек пилота: заказать в них нельзя.
+   */
+  const refreshPoi = debounce(async () => {
+    if (!map || !poiLayer) return;
+    const note = $('poiNote');
+    const zoom = map.getZoom();
+    const b = map.getBounds();
+    let data;
+    try {
+      data = await api(`/api/poi?north=${b.getNorth()}&south=${b.getSouth()}` +
+        `&east=${b.getEast()}&west=${b.getWest()}&zoom=${zoom}`);
+    } catch (e) {
+      return;
+    }
+
+    poiLayer.clearLayers();
+
+    if (data.tooFar) {
+      if (note) note.textContent = t('poi.zoomIn', { total: data.total });
+      return;
+    }
+
+    const icon = L.divIcon({ className: 'epu-poi', iconSize: [9, 9], iconAnchor: [4, 4], html: '<span class="epu-poi-dot"></span>' });
+    for (const p of data.points) {
+      L.marker([p.lat, p.lon], { icon, interactive: true, keyboard: false })
+        .bindTooltip(`${esc(p.n)} · ${esc(p.k)}`, { direction: 'top', offset: [0, -6] })
+        .addTo(poiLayer);
+    }
+
+    if (note) {
+      note.textContent = data.matched > data.shown
+        ? t('poi.capped', { n: data.shown, matched: data.matched, total: data.total })
+        : t('poi.shown', { n: data.shown, total: data.total });
+    }
+  }, 300);
 
   /** Карточка точки прямо на карте: статус, дорога и переход к меню. */
   function openVenuePopup(v, marker) {
