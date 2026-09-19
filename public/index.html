@@ -17,6 +17,7 @@
     <h1 data-i18n="guest.h1"></h1>
     <p class="lede" data-i18n="guest.lede"></p>
     <h2 data-i18n="guest.pickVenue"></h2>
+    <div id="venueMap" class="card" style="height:300px;padding:0;overflow:hidden;margin-bottom:12px"></div>
     <div id="venueList" class="grid grid-2"></div>
 
     <div class="card" style="margin-top:22px">
@@ -60,6 +61,22 @@
     <div id="step2" class="hidden">
       <h2 data-i18n="slots.h"></h2>
       <p class="lede" data-i18n="slots.lede"></p>
+
+      <div class="card" id="travelCard">
+        <div class="row-between">
+          <h3 style="margin:0" data-i18n="travel.h"></h3>
+          <span class="badge" id="travelBadge" hidden></span>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-sm" type="button" id="geoBtn" data-i18n="travel.locate"></button>
+          <select id="areaSelect" style="max-width:250px;flex:1 1 180px"></select>
+          <div class="lang-switch" id="modeSwitch">
+            <button type="button" data-mode="car" data-i18n="travel.car"></button>
+            <button type="button" data-mode="walk" data-i18n="travel.walk"></button>
+          </div>
+        </div>
+        <div class="small muted" id="travelNote" style="margin-top:9px"></div>
+      </div>
       <div class="card">
         <div class="row-between" style="margin-bottom:10px">
           <span class="small muted" id="workloadNote"></span>

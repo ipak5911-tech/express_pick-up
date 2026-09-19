@@ -9,6 +9,8 @@
   // ---------- сеть ----------
   async function api(path, opts) {
     const options = Object.assign({ headers: {} }, opts || {});
+    const pin = storage.get('staffPin', null);
+    if (pin) options.headers['X-Staff-Pin'] = pin;
     if (options.body && typeof options.body !== 'string') {
       options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(options.body);
@@ -29,7 +31,8 @@
   }
 
   // ---------- форматирование ----------
-  const money = n => new Intl.NumberFormat(window.I18N.lang === 'en' ? 'en-US' : 'ru-RU').format(Math.round(n)) + ' ₽';
+  // Единственная валюта сервиса — тенге
+  const money = n => new Intl.NumberFormat(window.I18N.lang === 'en' ? 'en-US' : 'ru-RU').format(Math.round(n)) + ' \u20b8';
   function hhmm(iso) {
     if (!iso) return '\u2014';
     const shifted = new Date(new Date(iso).getTime() - serverOffsetMinutes * 60000);
@@ -110,6 +113,7 @@
     if (!host) return;
     const links = [
       { href: '/', key: 'nav.guest', id: 'guest' },
+      { href: '/about', key: 'nav.about', id: 'about' },
       { href: '/kitchen', key: 'nav.kitchen', id: 'kitchen' },
       { href: '/pickup', key: 'nav.pickup', id: 'pickup' },
       { href: '/admin', key: 'nav.admin', id: 'admin' }
@@ -169,6 +173,63 @@
     };
   }
 
+  // ---------- доступ персонала ----------
+  /**
+   * Экраны кухни, выдачи и панели закрыты коротким кодом. Проверка идёт
+   * пробным запросом: так экран не пускает дальше, если код неверный.
+   */
+  async function staffGate(probePath, onAuthorized) {
+    const tryOpen = async () => {
+      try {
+        await api(probePath);
+        return true;
+      } catch (e) {
+        if (e.error === 'staff_auth') return false;
+        throw e;
+      }
+    };
+
+    if (storage.get('staffPin', null) && await tryOpen()) return onAuthorized();
+
+    const input = el('input', {
+      type: 'text', inputmode: 'numeric', autocomplete: 'off',
+      style: 'text-align:center;font-size:24px;letter-spacing:6px;font-family:var(--mono)',
+      'aria-label': t('staff.pin')
+    });
+    const error = el('div', { class: 'tiny', style: 'color:var(--danger);min-height:16px;margin-top:6px' });
+    const submit = el('button', { class: 'btn btn-primary btn-block btn-lg', type: 'submit', text: t('staff.enter') });
+
+    const overlay = el('div', {
+      style: 'position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-items:center;padding:16px'
+    }, [
+      el('form', { class: 'card', style: 'max-width:320px;width:100%' }, [
+        el('h3', { text: t('staff.title') }),
+        el('p', { class: 'small muted', style: 'margin:0 0 12px', text: t('staff.desc') }),
+        input, error, submit
+      ])
+    ]);
+
+    overlay.querySelector('form').onsubmit = async ev => {
+      ev.preventDefault();
+      submit.disabled = true;
+      storage.set('staffPin', input.value.trim());
+      const ok = await tryOpen();
+      submit.disabled = false;
+      if (ok) {
+        overlay.remove();
+        onAuthorized();
+      } else {
+        storage.del('staffPin');
+        error.textContent = t('staff.wrong');
+        input.value = '';
+        input.focus();
+      }
+    };
+
+    document.body.appendChild(overlay);
+    input.focus();
+  }
+
   // ---------- прочее ----------
   function qs(name) {
     return new URLSearchParams(location.search).get(name);
@@ -187,5 +248,5 @@
     return pct >= 90 ? 'high' : pct >= 60 ? 'mid' : '';
   }
 
-  window.EPU = { api, money, hhmm, venueNow: () => new Date(Date.now() - serverOffsetMinutes * 60000), mmss, minutesOf, waitLabel, esc, el, toast, storage, mountHeader, live, qs, debounce, loadClass, t };
+  window.EPU = { api, staffGate, money, hhmm, venueNow: () => new Date(Date.now() - serverOffsetMinutes * 60000), mmss, minutesOf, waitLabel, esc, el, toast, storage, mountHeader, live, qs, debounce, loadClass, t };
 })();

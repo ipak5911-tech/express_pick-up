@@ -39,6 +39,30 @@
     return { label: t('kitchen.handed'), cls: 'btn btn-sm' };
   }
 
+  /** Снятие заказа заведением: кончился продукт, сломалось оборудование. */
+  async function cancelOrder(order) {
+    const reason = prompt(t('kitchen.cancelReason'), '');
+    if (reason === null) return;
+    try {
+      const res = await api(`/api/kitchen/orders/${encodeURIComponent(order.id)}/cancel`, {
+        method: 'POST', body: { reason }
+      });
+      if (res.refund === 'due') toast(t('kitchen.refundDue'));
+      await refresh();
+    } catch (e) {
+      toast(e.message || t('common.error'), true);
+    }
+  }
+
+  async function markNoShow(order) {
+    try {
+      await api(`/api/kitchen/orders/${encodeURIComponent(order.id)}/no-show`, { method: 'POST' });
+      await refresh();
+    } catch (e) {
+      toast(e.message || t('common.error'), true);
+    }
+  }
+
   async function advance(order) {
     try {
       await api(`/api/kitchen/orders/${encodeURIComponent(order.id)}/advance`, { method: 'POST' });
@@ -128,7 +152,18 @@
         order.comment ? el('div', { class: 'tiny', style: 'color:var(--warn)', text: '⚑ ' + order.comment }) : null,
         el('div', { class: 'row-between' }, [
           el('span', { class: 'tiny faint num', text: order.guestName || '—' }),
-          el('button', { class: action.cls, type: 'button', text: action.label, onclick: () => advance(order) })
+          el('div', { class: 'row', style: 'gap:6px' }, [
+            order.status === 'ready'
+              ? el('button', {
+                  class: 'btn btn-sm btn-ghost', type: 'button', text: t('kitchen.noShow'),
+                  title: t('kitchen.noShowHint'), onclick: () => markNoShow(order)
+                })
+              : el('button', {
+                  class: 'btn btn-sm btn-ghost', type: 'button', text: t('kitchen.cancel'),
+                  title: t('kitchen.cancelHint'), onclick: () => cancelOrder(order)
+                }),
+            el('button', { class: action.cls, type: 'button', text: action.label, onclick: () => advance(order) })
+          ])
         ])
       ]));
     }
@@ -173,5 +208,6 @@
     document.addEventListener('langchange', render);
   }
 
-  init();
+  // экран персонала открывается только после ввода кода заведения
+  window.EPU.staffGate('/api/staff/check', init);
 })();

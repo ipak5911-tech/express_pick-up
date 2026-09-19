@@ -11,6 +11,10 @@
     slots: [],
     slot: null,
     payment: 'online',
+    areas: [],
+    from: null,          // {lat, lon} — откуда гость едет
+    mode: 'auto',        // auto | car | walk
+    travel: null,        // результат расчёта дороги
     workSeconds: 0,
     minCookSlots: 1,
     busy: false
@@ -284,6 +288,129 @@
     }
   }
 
+  // ---------- карта ----------
+  // Leaflet и тайлы OpenStreetMap грузятся лениво и только здесь. Если сети нет,
+  // карта молча исчезает, а выбор заведения остаётся списком: экраны кухни и
+  // выдачи от внешних ресурсов не зависят вовсе.
+
+  function loadAsset(tag, attrs) {
+    return new Promise((resolve, reject) => {
+      const node = document.createElement(tag);
+      Object.assign(node, attrs);
+      node.onload = resolve;
+      node.onerror = reject;
+      document.head.appendChild(node);
+    });
+  }
+
+  async function initMap() {
+    const host = $('venueMap');
+    if (!host) return;
+    try {
+      await loadAsset('link', { rel: 'stylesheet', href: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css' });
+      await loadAsset('script', { src: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' });
+    } catch (e) {
+      host.remove();
+      return;
+    }
+    if (!window.L) { host.remove(); return; }
+
+    const points = state.venues.filter(v => v.location);
+    if (!points.length) { host.remove(); return; }
+
+    const map = L.map(host, { scrollWheelZoom: false, attributionControl: true });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    const bounds = [];
+    for (const v of points) {
+      // iconSize: null — иначе Leaflet обрежет подпись до размера иконки по умолчанию
+      const icon = L.divIcon({
+        className: 'epu-pin',
+        iconSize: null,
+        html: `<span class="epu-pin-dot"></span><span class="epu-pin-label">${esc(v.name)}</span>`
+      });
+      L.marker([v.location.lat, v.location.lon], { icon })
+        .addTo(map)
+        .on('click', () => selectVenue(v.id));
+      bounds.push([v.location.lat, v.location.lon]);
+    }
+    map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 });
+    setTimeout(() => map.invalidateSize(), 120);
+  }
+
+  // ---------- дорога гостя ----------
+  // Слот, до которого гость не успевает доехать, бесполезен: блюдо остынет
+  // на полке. Поэтому дорога — такое же ограничение, как и мощность кухни.
+
+  async function loadAreas() {
+    try {
+      state.areas = await api('/api/areas');
+    } catch (e) {
+      state.areas = [];
+    }
+    const select = $('areaSelect');
+    select.innerHTML = '';
+    select.appendChild(el('option', { value: '', text: t('travel.area') }));
+    for (const a of state.areas) select.appendChild(el('option', { value: a.id, text: a.name }));
+    const saved = storage.get('areaId', null);
+    if (saved && state.areas.some(a => a.id === saved)) {
+      select.value = saved;
+      applyArea(saved, false);
+    }
+  }
+
+  function applyArea(areaId, reload = true) {
+    const area = state.areas.find(a => a.id === areaId);
+    state.from = area ? { lat: area.lat, lon: area.lon } : null;
+    storage.set('areaId', areaId || '');
+    if (reload && state.step === 2) loadSlots();
+  }
+
+  function locateMe() {
+    if (!navigator.geolocation) return toast(t('travel.denied'), true);
+    const btn = $('geoBtn');
+    btn.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        btn.disabled = false;
+        state.from = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        $('areaSelect').value = '';
+        storage.set('areaId', '');
+        if (state.step === 2) loadSlots();
+      },
+      () => {
+        btn.disabled = false;
+        toast(t('travel.denied'), true);
+      },
+      { timeout: 8000, maximumAge: 120000 }
+    );
+  }
+
+  function renderTravel() {
+    const badge = $('travelBadge');
+    const note = $('travelNote');
+    document.querySelectorAll('#modeSwitch button').forEach(b =>
+      b.setAttribute('aria-pressed', b.dataset.mode === state.mode));
+
+    if (!state.travel) {
+      badge.hidden = true;
+      note.textContent = t('travel.none');
+      return;
+    }
+    const tr = state.travel;
+    badge.hidden = false;
+    badge.className = 'badge ' + (tr.level === 'heavy' ? 'badge-danger' : tr.level === 'moderate' ? 'badge-warn' : 'badge-ok');
+    badge.textContent = t('travel.eta', { n: tr.minutes, km: String(tr.distanceKm).replace('.', ',') });
+
+    const parts = [t('travel.' + tr.level)];
+    if (tr.mode === 'car' && tr.parkingMinutes) parts.push(t('travel.parking', { n: tr.parkingMinutes }));
+    parts.push(t('travel.model'));
+    note.textContent = parts.join(' · ');
+  }
+
   // ---------- слоты ----------
   const loadSlots = debounce(async function () {
     if (!state.venue || !state.cart.length) return;
@@ -292,7 +419,8 @@
     let data;
     try {
       data = await api(`/api/venues/${encodeURIComponent(state.venue.id)}/slots`, {
-        method: 'POST', body: { items: cartPayload() }
+        method: 'POST',
+        body: { items: cartPayload(), from: state.from, mode: state.mode === 'auto' ? undefined : state.mode }
       });
     } catch (e) {
       grid.innerHTML = '';
@@ -300,10 +428,12 @@
       return;
     }
     state.slots = data.slots;
+    state.travel = data.travel;
     state.workSeconds = data.workSeconds;
     state.minCookSlots = data.minCookSlots;
     state.tooLarge = data.tooLarge;
     state.maxWorkMinutes = Math.floor(data.maxWorkSeconds / 60);
+    renderTravel();
     renderSlots();
   }, 120);
 
@@ -326,7 +456,8 @@
       const sub = slot.available
         ? `${slot.maxOrders - slot.ordersInSlot} ${t('slots.free')}`
         : slot.reason === 'kitchen_full' ? t('slots.busyKitchen')
-        : slot.reason === 'handoff_full' ? t('slots.busyHandoff') : t('slots.closed');
+        : slot.reason === 'handoff_full' ? t('slots.busyHandoff')
+        : slot.reason === 'too_far' ? t('slots.tooFar') : t('slots.closed');
 
       grid.appendChild(el('button', {
         class: 'slot', type: 'button', disabled: !slot.available,
@@ -432,6 +563,16 @@
 
     $('repeatBtn').onclick = repeatLast;
 
+    $('geoBtn').onclick = locateMe;
+    $('areaSelect').onchange = ev => applyArea(ev.target.value);
+    document.querySelectorAll('#modeSwitch button').forEach(b => {
+      b.onclick = () => {
+        state.mode = state.mode === b.dataset.mode ? 'auto' : b.dataset.mode;
+        renderTravel();
+        if (state.step === 2) loadSlots();
+      };
+    });
+
     $('backBtn').onclick = () => goStep(Math.max(1, state.step - 1));
 
     $('mainBtn').onclick = () => {
@@ -478,7 +619,7 @@
     document.addEventListener('langchange', () => {
       if (!state.venue) { loadVenues(); return; }
       renderCats(); renderMenu(); renderCartBar();
-      if (state.step === 2) renderSlots();
+      if (state.step === 2) { renderTravel(); renderSlots(); }
       if (state.step === 3) renderPay();
       $('venuePoint').textContent = t('guest.pickupPoint') + ': ' + state.venue.pickupPoint;
       updateRepeatButton();
@@ -496,6 +637,8 @@
     bind();
     try {
       await loadVenues();
+      await loadAreas();
+      initMap();
       const saved = storage.get('venueId', null);
       const preset = window.EPU.qs('venue') || saved;
       if (preset && state.venues.some(v => v.id === preset)) await selectVenue(preset);

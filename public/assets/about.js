@@ -1,0 +1,164 @@
+/* Express Pick-Up — страница проекта: что решаем, как устроено, что видно прямо сейчас */
+(function () {
+  const { api, el, waitLabel, mountHeader, t, toast } = window.EPU;
+  const $ = id => document.getElementById(id);
+
+  const SOLUTION_ROWS = [
+    ['about.row1a', 'about.row1b'],
+    ['about.row2a', 'about.row2b'],
+    ['about.row3a', 'about.row3b'],
+    ['about.row4a', 'about.row4b'],
+    ['about.row5a', 'about.row5b']
+  ];
+
+  const HONEST_ITEMS = [
+    'about.honest1', 'about.honest2', 'about.honest3', 'about.honest4', 'about.honest5'
+  ];
+
+  function renderStaticLists() {
+    const table = $('solutionTable');
+    table.innerHTML = '';
+    for (const [a, b] of SOLUTION_ROWS) {
+      table.appendChild(el('tr', {}, [
+        el('td', { style: 'color:var(--text-dim)', text: t(a) }),
+        el('td', {}, [el('b', { text: t(b) })])
+      ]));
+    }
+    const list = $('honestList');
+    list.innerHTML = '';
+    for (const key of HONEST_ITEMS) list.appendChild(el('li', { text: t(key), style: 'margin-bottom:6px' }));
+  }
+
+  /** Схема: работа кухни раскладывается назад от времени выдачи. */
+  function renderEngine() {
+    const host = $('engineDiagram');
+    host.innerHTML = '';
+    const slots = [
+      { label: '11:40', fill: 0 },
+      { label: '11:45', fill: 35 },
+      { label: '11:50', fill: 100 },
+      { label: '11:55', fill: 100 },
+      { label: '12:00', handoff: true }
+    ];
+    host.appendChild(el('div', { class: 'row', style: 'gap:6px;align-items:flex-end' },
+      slots.map(s => el('div', { style: 'flex:1 1 0;text-align:center;min-width:0' }, [
+        el('div', {
+          style: 'height:64px;display:flex;align-items:flex-end;justify-content:center;' +
+                 'border:1px solid var(--border);border-radius:8px;overflow:hidden;' +
+                 (s.handoff ? 'background:var(--brand-soft);border-color:var(--brand)' : 'background:var(--surface-2)')
+        }, [
+          s.handoff
+            ? el('div', { style: 'align-self:center;font-size:22px', text: '\u{1F371}' })
+            : el('div', { style: `width:100%;height:${s.fill}%;background:var(--ok)` })
+        ]),
+        el('div', { class: 'tiny faint num', style: 'margin-top:4px', text: s.label })
+      ]))
+    ));
+    host.appendChild(el('div', {
+      class: 'tiny', style: 'text-align:center;margin-top:8px;color:var(--brand-text)',
+      text: t('about.engineArrow')
+    }));
+  }
+
+  /** Суточный профиль пробок Алматы, на котором строится оценка дороги. */
+  async function renderTraffic() {
+    const host = $('trafficChart');
+    host.innerHTML = '';
+    let data;
+    try {
+      data = await api('/api/traffic');
+    } catch (e) {
+      host.remove();
+      return;
+    }
+    const max = Math.max(...data.hourly);
+    host.appendChild(el('div', { class: 'row', style: 'gap:2px;align-items:flex-end;height:96px' },
+      data.hourly.map((factor, hour) => {
+        const h = Math.round((factor / max) * 84);
+        const tone = factor >= 1.75 ? 'danger' : factor >= 1.35 ? 'warn' : 'ok';
+        const lunch = hour >= 12 && hour < 14;
+        return el('div', {
+          style: 'flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;gap:3px',
+          title: `${String(hour).padStart(2, '0')}:00 — ×${factor.toFixed(2)}`
+        }, [
+          el('div', {
+            style: `height:${h}px;border-radius:2px 2px 0 0;background:var(--${tone});` +
+                   (lunch ? 'outline:2px solid var(--brand);outline-offset:1px' : '')
+          }),
+          el('div', { class: 'tiny faint', style: 'text-align:center;font-size:9px', text: hour % 3 === 0 ? String(hour) : '' })
+        ]);
+      })
+    ));
+    host.appendChild(el('div', {
+      class: 'tiny', style: 'margin-top:10px;color:var(--brand-text)', text: t('about.trafficLunch')
+    }));
+  }
+
+  function kpiTile(label, value, sub, hit) {
+    return el('div', { class: 'kpi' + (hit === true ? ' hit' : hit === false ? ' miss' : '') }, [
+      el('div', { class: 'kpi-label', text: label }),
+      el('div', { class: 'kpi-value', text: value }),
+      el('div', { class: 'kpi-sub', text: sub })
+    ]);
+  }
+
+  async function renderLive() {
+    let data;
+    try {
+      data = await api('/api/impact');
+    } catch (e) {
+      toast(e.message || t('common.error'), true);
+      return;
+    }
+    const k = data.totals;
+    const tg = data.targets;
+    const host = $('liveKpi');
+    host.innerHTML = '';
+
+    host.appendChild(kpiTile(t('admin.kpiWait'), waitLabel(k.p90WaitSeconds),
+      t('about.vsCounter', { n: waitLabel(k.p90WaitCounterSeconds) }),
+      k.p90WaitSeconds == null ? null : k.p90WaitSeconds <= tg.p90WaitSeconds));
+
+    host.appendChild(kpiTile(t('admin.kpiThroughput'),
+      (k.throughputGainPct >= 0 ? '+' : '') + k.throughputGainPct + '%',
+      t('about.vsBaseline'),
+      k.throughputGainPct == null ? null : k.throughputGainPct >= tg.throughputGainPct));
+
+    host.appendChild(kpiTile(t('admin.kpiOnTime'),
+      k.onTimePct == null ? '—' : k.onTimePct + '%', t('admin.kpiOnTimeSub'),
+      k.onTimePct == null ? null : k.onTimePct >= tg.onTimePct));
+
+    const table = $('venueTable');
+    table.innerHTML = '';
+    for (const row of data.venues) {
+      table.appendChild(el('tr', {}, [
+        el('td', {}, [
+          el('div', { text: row.venue }),
+          el('div', { class: 'tiny faint', text: row.address })
+        ]),
+        el('td', { class: 'num', text: waitLabel(row.p90WaitSeconds) }),
+        el('td', { class: 'num', text: row.onTimePct == null ? '—' : row.onTimePct + '%' }),
+        el('td', {}, [el('span', {
+          class: 'badge ' + (row.throughputGainPct >= 25 ? 'badge-ok' : 'badge-warn'),
+          text: (row.throughputGainPct >= 0 ? '+' : '') + row.throughputGainPct + '%'
+        })])
+      ]));
+    }
+  }
+
+  function renderAll() {
+    renderStaticLists();
+    renderEngine();
+    $('pinHint').textContent = t('about.pinHint');
+  }
+
+  async function init() {
+    mountHeader('about');
+    window.I18N.apply();
+    renderAll();
+    await Promise.all([renderTraffic(), renderLive()]);
+    document.addEventListener('langchange', () => { renderAll(); renderLive(); });
+  }
+
+  init();
+})();

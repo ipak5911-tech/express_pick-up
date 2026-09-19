@@ -15,8 +15,12 @@ const capacity = require('./lib/capacity');
 const orders = require('./lib/orders');
 const analytics = require('./lib/analytics');
 const qr = require('./lib/qr');
+const geo = require('./lib/geo');
 
 const PORT = Number(process.env.PORT) || 3000;
+// Экраны кухни, выдачи и панели закрыты коротким кодом. Это не полноценная
+// авторизация, а защита от случайного гостя, открывшего /admin с телефона.
+const STAFF_PIN = String(process.env.STAFF_PIN || '2468');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 const MIME = {
@@ -113,6 +117,7 @@ store.bus.on('change', broadcast);
 function venuePublic(v) {
   return {
     id: v.id, name: v.name, kind: v.kind, address: v.address, pickupPoint: v.pickupPoint,
+    location: v.location,
     settings: {
       slotMinutes: v.settings.slotMinutes,
       minLeadMinutes: v.settings.minLeadMinutes,
@@ -127,16 +132,98 @@ function venuePublic(v) {
   };
 }
 
+// ---------- доступ персонала ----------
+const STAFF_PREFIXES = ['/api/kitchen', '/api/pickup', '/api/admin', '/api/demo', '/api/staff'];
+
+function needsStaff(pathname) {
+  return STAFF_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'));
+}
+
+function hasStaffAccess(req, query) {
+  const provided = req.headers['x-staff-pin'] || query.pin;
+  return String(provided || '') === STAFF_PIN;
+}
+
 // ---------- маршруты API ----------
 async function handleApi(req, res, pathname, query) {
   const method = req.method;
   const seg = pathname.split('/').filter(Boolean); // ['api', ...]
   const now = Date.now();
 
+  if (needsStaff(pathname) && !hasStaffAccess(req, query)) {
+    return sendError(res, 401, 'staff_auth', 'Нужен код доступа персонала');
+  }
+
+  // GET /api/staff/check — проверка кода доступа для экранов персонала
+  if (method === 'GET' && pathname === '/api/staff/check') {
+    return sendJson(res, 200, { ok: true });
+  }
+
+  // GET /api/impact — публичные агрегированные метрики для страницы «О проекте».
+  // Только сводные числа, без состава заказов и контактов гостей.
+  if (method === 'GET' && pathname === '/api/impact') {
+    const rows = store.venues().map(v => {
+      const r = analytics.report(v, store.orders(), now);
+      return {
+        venue: v.name,
+        kind: v.kind,
+        address: v.address,
+        orders: r.totals.orders,
+        express: r.totals.express,
+        p90WaitSeconds: r.kpi.p90WaitSeconds,
+        p90WaitCounterSeconds: r.kpi.p90WaitCounterSeconds,
+        baselineWaitSeconds: r.kpi.baselineWaitSeconds,
+        onTimePct: r.kpi.onTimePct,
+        expressSharePeakPct: r.kpi.expressSharePeakPct,
+        throughputGainPct: r.kpi.throughputGainPct,
+        avgRating: r.kpi.avgRating
+      };
+    });
+    // Проценты усредняем до целых, секунды и оценку — до десятых
+    const avg = (key, decimals = 0) => {
+      const vals = rows.map(r => r[key]).filter(v => v != null);
+      if (!vals.length) return null;
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const k = Math.pow(10, decimals);
+      return Math.round(mean * k) / k;
+    };
+    return sendJson(res, 200, {
+      venues: rows,
+      totals: {
+        orders: rows.reduce((a, r) => a + r.orders, 0),
+        express: rows.reduce((a, r) => a + r.express, 0),
+        p90WaitSeconds: avg('p90WaitSeconds'),
+        p90WaitCounterSeconds: avg('p90WaitCounterSeconds'),
+        baselineWaitSeconds: avg('baselineWaitSeconds'),
+        onTimePct: avg('onTimePct'),
+        expressSharePeakPct: avg('expressSharePeakPct'),
+        throughputGainPct: avg('throughputGainPct'),
+        avgRating: avg('avgRating', 1)
+      },
+      targets: { p90WaitSeconds: 120, expressSharePeakPct: 40, throughputGainPct: 25, onTimePct: 90, avgRating: 4.5 }
+    });
+  }
+
+  // GET /api/traffic — суточный профиль загруженности дорог Алматы (модель)
+  if (method === 'GET' && pathname === '/api/traffic') {
+    return sendJson(res, 200, {
+      hourly: geo.HOURLY_CONGESTION,
+      freeFlowKmh: geo.FREE_FLOW_KMH,
+      walkKmh: geo.WALK_KMH,
+      source: 'model'
+    });
+  }
+
+  // GET /api/areas — районы Алматы для оценки времени в пути без геолокации
+  if (method === 'GET' && pathname === '/api/areas') {
+    return sendJson(res, 200, seed.ALMATY_AREAS);
+  }
+
   // GET /api/venues
   if (method === 'GET' && pathname === '/api/venues') {
     return sendJson(res, 200, store.venues().map(v => ({
       id: v.id, name: v.name, kind: v.kind, address: v.address, pickupPoint: v.pickupPoint,
+      location: v.location,
       serviceHours: v.settings.serviceHours,
       itemsAvailable: v.menu.filter(i => i.available).length,
       itemsTotal: v.menu.length
@@ -162,7 +249,20 @@ async function handleApi(req, res, pathname, query) {
       if (e.code === 'empty_cart') cart = [];
       else return sendError(res, 400, e.code, e.message, { itemId: e.itemId, groupId: e.groupId });
     }
-    return sendJson(res, 200, capacity.availableSlots(v, store.orders(), cart, now));
+
+    // Дорога гостя — такое же ограничение слота, как и мощность кухни
+    let travel = null;
+    const from = body.from;
+    if (from && Number.isFinite(Number(from.lat)) && Number.isFinite(Number(from.lon))) {
+      const point = { lat: Number(from.lat), lon: Number(from.lon) };
+      travel = body.mode === 'walk' || body.mode === 'car'
+        ? geo.travelMinutes(point, v, now, body.mode)
+        : geo.bestTravel(point, v, now);
+    }
+
+    const result = capacity.availableSlots(v, store.orders(), cart, now, travel ? travel.minutes : 0);
+    result.travel = travel;
+    return sendJson(res, 200, result);
   }
 
   // POST /api/venues/:id/orders
@@ -258,11 +358,16 @@ async function handleApi(req, res, pathname, query) {
       else if (seg[4] === 'status') {
         const body = await readBody(req);
         orders.setStatus(o, body.status, now);
+      } else if (seg[4] === 'cancel') {
+        const body = await readBody(req);
+        orders.cancelByVenue(o, body.reason, now);
+      } else if (seg[4] === 'no-show') {
+        orders.markNoShow(o, now);
       } else return sendError(res, 404, 'unknown_action', 'Действие не найдено');
     } catch (e) {
       return sendError(res, 409, e.code || 'error', e.message);
     }
-    return sendJson(res, 200, { ok: true, status: o.status });
+    return sendJson(res, 200, { ok: true, status: o.status, refund: o.refund });
   }
 
   // GET /api/pickup/:venueId
@@ -362,6 +467,7 @@ async function handleApi(req, res, pathname, query) {
 // ---------- статика ----------
 const PAGES = {
   '/': 'index.html',
+  '/about': 'about.html',
   '/kitchen': 'kitchen.html',
   '/pickup': 'pickup.html',
   '/admin': 'admin.html'
@@ -408,9 +514,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// демо-тик: автокухня
+// фоновый тик: автокухня в демо-режиме и развёртка незабранных заказов
 setInterval(() => {
-  try { orders.autoKitchenTick(Date.now()); } catch (e) { console.error('autoKitchen', e.message); }
+  const now = Date.now();
+  try { orders.autoKitchenTick(now); } catch (e) { console.error('autoKitchen', e.message); }
+  try { orders.sweepNoShows(now); } catch (e) { console.error('sweepNoShows', e.message); }
 }, 5000).unref();
 
 function localAddresses() {
@@ -432,7 +540,8 @@ if (require.main === module) {
     for (const a of addrs) {
       console.log(`  Гость      http://${a}:${PORT}/`);
     }
-    console.log(`  Кухня      http://localhost:${PORT}/kitchen`);
+    console.log(`  О проекте  http://localhost:${PORT}/about`);
+    console.log(`  Кухня      http://localhost:${PORT}/kitchen  (код ${STAFF_PIN})`);
     console.log(`  Выдача     http://localhost:${PORT}/pickup`);
     console.log(`  Панель     http://localhost:${PORT}/admin\n`);
   });

@@ -307,5 +307,6 @@
     document.addEventListener('langchange', render);
   }
 
-  init();
+  // экран персонала открывается только после ввода кода заведения
+  window.EPU.staffGate('/api/staff/check', init);
 })();
