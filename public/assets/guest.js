@@ -114,6 +114,15 @@
               : st.acceptingOrders ? 'color:var(--ok)' : 'color:var(--warn)'),
           text: statusLine(v)
         }),
+        v.travel ? el('div', { class: 'row', style: 'gap:6px;margin-top:6px' }, [
+          el('span', {
+            class: 'badge ' + (v.travel.level === 'heavy' ? 'badge-danger'
+              : v.travel.level === 'moderate' ? 'badge-warn' : 'badge-info'),
+            text: t(v.travel.mode === 'walk' ? 'guest.travelWalk' : 'guest.travelCar', {
+              n: v.travel.minutes, km: String(v.travel.distanceKm).replace('.', ',')
+            })
+          })
+        ]) : null,
         el('div', { class: 'tiny faint', style: 'margin-top:3px' },
           `${v.serviceHours.from}\u2013${v.serviceHours.to} \u00b7 ${v.itemsAvailable}/${v.itemsTotal} ${t('guest.items')}`),
         el('div', { class: 'tiny', style: 'margin-top:4px;color:var(--brand-text)' }, '\u2192 ' + v.pickupPoint)
@@ -122,7 +131,9 @@
   }
 
   async function loadVenues() {
-    state.venues = await api('/api/venues');
+    const from = state.from;
+    const qs = from ? `?lat=${encodeURIComponent(from.lat)}&lon=${encodeURIComponent(from.lon)}` : '';
+    state.venues = await api('/api/venues' + qs);
     renderVenueList();
     updateMapMarkers();
     const sel = $('lookupVenue');
@@ -373,6 +384,7 @@
 
   let mapMarkers = {};
   let map = null;
+  let meMarker = null;
 
   function loadAsset(tag, attrs, timeoutMs = 6000) {
     return new Promise((resolve, reject) => {
@@ -425,21 +437,52 @@
     mapMarkers = {};
     const bounds = [];
     for (const v of points) {
-      // iconSize: null — иначе Leaflet обрежет подпись до размера иконки по умолчанию
+      // Подписи на всех точках сразу наезжают друг на друга: в центре Алматы
+      // заведения стоят плотно. Поэтому на карте — точка, имя во всплывающей
+      // подсказке, а подробности и переход к меню — по нажатию.
+      // Явный размер и якорь: Leaflet позиционирует маркер собственным
+      // inline-transform, поэтому смещать его своим CSS бесполезно.
       const icon = L.divIcon({
         className: 'epu-pin',
-        iconSize: null,
-        html: `<span class="epu-pin-dot"></span><span class="epu-pin-label">${esc(v.name)}</span>`
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+        html: '<span class="epu-pin-dot"></span>'
       });
-      const marker = L.marker([v.location.lat, v.location.lon], { icon })
+      const marker = L.marker([v.location.lat, v.location.lon], { icon, title: v.name })
         .addTo(map)
-        .on('click', () => selectVenue(v.id));
+        .bindTooltip(v.name, { direction: 'top', offset: [0, -10] })
+        .on('click', () => openVenuePopup(v, marker));
       mapMarkers[v.id] = marker;
       bounds.push([v.location.lat, v.location.lon]);
     }
     map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 });
     setTimeout(() => map.invalidateSize(), 120);
     updateMapMarkers();
+    updateMeMarker();
+  }
+
+  /** Карточка точки прямо на карте: статус, дорога и переход к меню. */
+  function openVenuePopup(v, marker) {
+    const fresh = state.venues.find(x => x.id === v.id) || v;
+    const node = el('div', { style: 'min-width:190px' }, [
+      el('b', { style: 'display:block;font-size:14px', text: fresh.name }),
+      el('div', { class: 'tiny', style: 'color:#5d6672;margin-top:2px', text: fresh.kind + ' · ' + fresh.address }),
+      el('div', {
+        class: 'tiny', style: 'margin-top:6px;font-weight:700;color:' +
+          (fresh.status.openNow === false ? '#8b95a3' : fresh.status.acceptingOrders ? '#15803d' : '#b45309'),
+        text: statusLine(fresh)
+      }),
+      fresh.travel ? el('div', { class: 'tiny', style: 'margin-top:4px;color:#1d4ed8' },
+        t(fresh.travel.mode === 'walk' ? 'guest.travelWalk' : 'guest.travelCar', {
+          n: fresh.travel.minutes, km: String(fresh.travel.distanceKm).replace('.', ',')
+        })) : null,
+      el('button', {
+        class: 'btn btn-sm btn-primary', style: 'margin-top:9px;width:100%',
+        type: 'button', text: t('guest.menu'),
+        onclick: () => selectVenue(fresh.id)
+      })
+    ]);
+    marker.bindPopup(node, { closeButton: true, minWidth: 190 }).openPopup();
   }
 
   /** Точка на карте показывает, принимает ли заведение заказы сейчас. */
@@ -455,6 +498,61 @@
       dot.style.background = st.openNow === false ? 'var(--text-faint)'
         : st.acceptingOrders ? 'var(--ok)' : 'var(--warn)';
     }
+  }
+
+  /** Своя точка на карте: без неё расстояния — абстракция. */
+  function updateMeMarker() {
+    if (!map || !window.L) return;
+    if (!state.from) {
+      if (meMarker) { map.removeLayer(meMarker); meMarker = null; }
+      return;
+    }
+    const pos = [state.from.lat, state.from.lon];
+    if (meMarker) { meMarker.setLatLng(pos); return; }
+    meMarker = L.marker(pos, {
+      icon: L.divIcon({
+        className: 'epu-me',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+        html: '<span class="epu-me-dot"></span>'
+      }),
+      zIndexOffset: 1000
+    }).addTo(map).bindTooltip(t('guest.youAreHere'), { direction: 'top', offset: [0, -12] });
+  }
+
+  /** Сортировка каталога по времени в пути до каждой точки. */
+  async function toggleNearMe() {
+    const btn = $('nearMeBtn');
+    const note = $('nearMeNote');
+    if (state.from) {
+      state.from = null;
+      storage.del('areaId');
+      updateMeMarker();
+      btn.textContent = t('guest.nearMe');
+      note.textContent = '';
+      await loadVenues();
+      return;
+    }
+    if (!navigator.geolocation) return toast(t('travel.denied'), true);
+    btn.disabled = true;
+    btn.textContent = t('guest.locating');
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        state.from = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        btn.disabled = false;
+        btn.textContent = t('guest.nearMeOff');
+        note.textContent = t('guest.nearMeOn');
+        await loadVenues();
+        updateMeMarker();
+        if (map) map.setView([state.from.lat, state.from.lon], map.getZoom());
+      },
+      () => {
+        btn.disabled = false;
+        btn.textContent = t('guest.nearMe');
+        toast(t('travel.denied'), true);
+      },
+      { timeout: 8000, maximumAge: 120000 }
+    );
   }
 
   // ---------- дорога гостя ----------
@@ -495,6 +593,7 @@
         state.from = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         $('areaSelect').value = '';
         storage.set('areaId', '');
+        updateMeMarker();
         if (state.step === 2) loadSlots();
       },
       () => {
@@ -679,6 +778,7 @@
 
     $('repeatBtn').onclick = repeatLast;
 
+    $('nearMeBtn').onclick = toggleNearMe;
     $('geoBtn').onclick = locateMe;
     $('areaSelect').onchange = ev => applyArea(ev.target.value);
     document.querySelectorAll('#modeSwitch button').forEach(b => {

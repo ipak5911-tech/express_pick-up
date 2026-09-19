@@ -366,14 +366,15 @@ table.tbl tr:last-child td { border-bottom: 0; }
   :root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88); }
 }
 
-/* Маркер заведения: точка и подпись. Размер задаётся стилями, а не Leaflet */
-.epu-pin { width: auto !important; height: auto !important; margin: 0 !important;
-  display: flex; align-items: center; gap: 6px; transform: translate(-8px, -8px); }
-.epu-pin-dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto;
-  background: var(--brand); border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0, 0, 0, .45); }
-.epu-pin-label { background: var(--surface); color: var(--text);
-  border: 1px solid var(--border-strong); border-radius: 7px; padding: 2px 8px;
-  font: 600 11px var(--font); white-space: nowrap; box-shadow: 0 1px 5px rgba(0, 0, 0, .25); }
+/* Маркер заведения: цветная точка, имя — во всплывающей подсказке.
+   Размер задаёт Leaflet через iconSize, поэтому здесь только вид. */
+.epu-pin, .epu-me { background: none; border: 0; }
+.epu-pin-dot {
+  display: block; width: 100%; height: 100%; border-radius: 50%;
+  background: var(--brand); border: 3px solid #fff; cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, .45); transition: transform .12s ease;
+}
+.epu-pin-dot:hover { transform: scale(1.25); }
 
 /* Карта без подложки: точки на местах, но гость должен понимать почему */
 .epu-map-note {
@@ -382,4 +383,11 @@ table.tbl tr:last-child td { border-bottom: 0; }
   background: var(--surface); color: var(--text-dim);
   border: 1px solid var(--border-strong); border-radius: 8px;
   padding: 6px 12px; font-size: 12px; box-shadow: var(--shadow-sm);
+}
+
+/* Своя точка на карте — синяя, чтобы не путалась с точками заведений */
+.epu-me-dot {
+  display: block; width: 100%; height: 100%; border-radius: 50%;
+  background: #2563eb; border: 3px solid #fff;
+  box-shadow: 0 0 0 5px rgba(37, 99, 235, .25);
 }

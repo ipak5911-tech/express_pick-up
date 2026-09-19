@@ -94,7 +94,8 @@ async function run() {
   // ---------- каталог и меню ----------
   section('Каталог и меню');
   r = await get('/api/venues', false);
-  ok(r.status === 200 && r.data.length === 3, `три заведения в каталоге (${r.data.length})`);
+  ok(r.status === 200 && r.data.length >= 8, `точек питания в каталоге: ${r.data.length}`);
+  ok(r.data.every(v => v.location && v.status), 'у каждой точки есть координаты и живой статус');
   const venueId = r.data[0].id;
   const venue = r.data[0];
   ok(venue.location && venue.location.lat > 43 && venue.location.lat < 44,
@@ -134,6 +135,26 @@ async function run() {
 
   r = await get('/api/traffic', false);
   ok(r.status === 200 && r.data.hourly.length === 24, 'суточный профиль пробок доступен');
+
+  // Каталог с координатами гостя: «где поесть рядом со мной»
+  r = await get(`/api/venues?lat=${far.lat}&lon=${far.lon}`, false);
+  const nearList = r.data;
+  ok(nearList.every(v => v.travel && v.travel.minutes > 0), 'каждая точка получила время в пути');
+  const openOnly = nearList.filter(v => v.status.openNow).map(v => v.travel.minutes);
+  const sortedByTime = openOnly.every((m, i) => i === 0 || openOnly[i - 1] <= m);
+  ok(sortedByTime, `открытые точки отсортированы по близости: ${openOnly.join(' < ')} мин`);
+  const closedIdx = nearList.findIndex(v => !v.status.openNow);
+  const openIdx = nearList.findIndex(v => v.status.openNow);
+  ok(closedIdx === -1 || openIdx === -1 || closedIdx > openIdx, 'закрытые точки уходят вниз списка');
+
+  // Пешком там, где ехать бессмысленно
+  const atCafe = nearList.find(v => v.id === 'coffeeboom-arbat');
+  r = await get('/api/venues?lat=43.2603&lon=76.9453', false);
+  const walkable = r.data.filter(v => v.travel.mode === 'walk');
+  ok(walkable.length > 0, `рядом предлагается идти пешком: ${walkable.map(v => v.name + ' ' + v.travel.minutes + ' мин').join(', ')}`);
+
+  r = await get('/api/venues', false);
+  ok(r.data.every(v => v.travel === null), 'без координат время в пути не считается');
 
   // ---------- оформление заказа ----------
   section('Оформление заказа');

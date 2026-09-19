@@ -270,16 +270,40 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, seed.ALMATY_AREAS);
   }
 
-  // GET /api/venues
+  // GET /api/venues[?lat=&lon=&mode=]
+  // С координатами гостя каждая точка получает время в пути с учётом пробок,
+  // а список сортируется по близости: «где поесть рядом со мной прямо сейчас».
   if (method === 'GET' && pathname === '/api/venues') {
-    return sendJson(res, 200, store.venues().map(v => ({
-      id: v.id, name: v.name, kind: v.kind, address: v.address, pickupPoint: v.pickupPoint,
-      location: v.location,
-      serviceHours: v.settings.serviceHours,
-      itemsAvailable: v.menu.filter(i => i.available).length,
-      itemsTotal: v.menu.length,
-      status: capacity.venueStatus(v, store.orders(), now)
-    })));
+    const lat = Number(query.lat);
+    const lon = Number(query.lon);
+    const from = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+    const mode = query.mode === 'walk' || query.mode === 'car' ? query.mode : null;
+
+    const rows = store.venues().map(v => {
+      const travel = from
+        ? (mode ? geo.travelMinutes(from, v, now, mode) : geo.bestTravel(from, v, now))
+        : null;
+      return {
+        id: v.id, name: v.name, kind: v.kind, address: v.address, pickupPoint: v.pickupPoint,
+        location: v.location,
+        serviceHours: v.settings.serviceHours,
+        itemsAvailable: v.menu.filter(i => i.available).length,
+        itemsTotal: v.menu.length,
+        status: capacity.venueStatus(v, store.orders(), now),
+        travel
+      };
+    });
+
+    if (from) {
+      // Ближе — выше, но закрытые точки уходят вниз при любом расстоянии
+      rows.sort((a, b) => {
+        if (a.status.openNow !== b.status.openNow) return a.status.openNow ? -1 : 1;
+        const am = a.travel ? a.travel.minutes : Infinity;
+        const bm = b.travel ? b.travel.minutes : Infinity;
+        return am - bm;
+      });
+    }
+    return sendJson(res, 200, rows);
   }
 
   // GET /api/venues/:id
