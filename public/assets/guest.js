@@ -137,14 +137,28 @@
    * Событий недостаточно: открытие и закрытие происходят по часам, а не по
    * действию пользователя, поэтому нужен и таймер, и поток событий.
    */
-  function watchVenues() {
-    const refresh = async () => {
-      if (state.venue) return; // на экране заказа список не нужен
-      try { await loadVenues(); } catch (e) { /* сеть моргнула — попробуем позже */ }
-    };
-    setInterval(refresh, 30000);
+  async function refreshVenues() {
+    if (state.venue) return; // на экране заказа список не нужен
+    try { await loadVenues(); } catch (e) { /* сеть моргнула — попробуем позже */ }
+  }
+
+  /** Периодический опрос: работает всегда и ни от чего не зависит. */
+  function watchVenuesByTimer() {
+    setInterval(refreshVenues, 30000);
+  }
+
+  /**
+   * Поток событий открывается ПОСЛЕ загрузки карты.
+   *
+   * SSE — долгоживущее соединение. Если открыть его раньше, оно занимает слот
+   * в пуле соединений, и короткие загрузки (скрипт карты, тайлы) могут встать
+   * в очередь за бесконечным потоком. Сначала короткое, потом долгое.
+   */
+  function watchVenuesLive() {
     live(null, ev => {
-      if (['order_created', 'order_status', 'settings_updated', 'menu_updated'].includes(ev.type)) refresh();
+      if (['order_created', 'order_status', 'settings_updated', 'menu_updated'].includes(ev.type)) {
+        refreshVenues();
+      }
     });
   }
 
@@ -353,11 +367,12 @@
   }
 
   // ---------- карта ----------
-  // Leaflet и тайлы OpenStreetMap грузятся лениво и только здесь. Если сети нет,
-  // карта молча исчезает, а выбор заведения остаётся списком: экраны кухни и
-  // выдачи от внешних ресурсов не зависят вовсе.
+  // Leaflet лежит в репозитории, тайлы OpenStreetMap грузятся лениво и только
+  // здесь. Если сети нет, карта показывает пустую подложку, а выбор заведения
+  // работает списком: экраны кухни и выдачи от внешних ресурсов не зависят.
 
   let mapMarkers = {};
+  let map = null;
 
   function loadAsset(tag, attrs, timeoutMs = 6000) {
     return new Promise((resolve, reject) => {
@@ -373,12 +388,11 @@
   async function initMap() {
     const host = $('venueMap');
     if (!host) return;
-    // Стиль грузим без ожидания: без него карта выглядит хуже, но работает.
-    // Ждём только скрипт — без него строить нечего.
-    loadAsset('link', { rel: 'stylesheet', href: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css' })
-      .catch(() => { /* карта переживёт */ });
+    // Leaflet лежит в репозитории и отдаётся своим же сервером: заведение не
+    // должно зависеть от доступности чужого CDN. Внешними остаются только тайлы.
     try {
-      await loadAsset('script', { src: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' });
+      await loadAsset('link', { rel: 'stylesheet', href: '/vendor/leaflet/leaflet.css' });
+      await loadAsset('script', { src: '/vendor/leaflet/leaflet.js' });
     } catch (e) {
       host.remove();
       return;
@@ -388,11 +402,25 @@
     const points = state.venues.filter(v => v.location);
     if (!points.length) { host.remove(); return; }
 
-    const map = L.map(host, { scrollWheelZoom: false, attributionControl: true });
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    map = L.map(host, { scrollWheelZoom: false, attributionControl: true });
+
+    // Подложка — единственное, что ещё грузится извне. Если тайлы не приходят,
+    // карта остаётся рабочей (точки на своих местах), но гость должен понимать,
+    // что перед ним не пустое поле, а карта без подложки.
+    const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 18,
       attribution: '© OpenStreetMap'
-    }).addTo(map);
+    });
+    // Проверяем по времени, а не по событию ошибки: заблокированный запрос
+    // тайла не завершается вовсе, и tileerror в этом случае не наступает.
+    let tileLoaded = false;
+    tiles.on('tileload', () => { tileLoaded = true; });
+    const tileWatch = setTimeout(() => {
+      if (tileLoaded || host.querySelector('.epu-map-note')) return;
+      host.appendChild(el('div', { class: 'epu-map-note', text: t('guest.mapOffline') }));
+    }, 6000);
+    tiles.on('tileload', () => clearTimeout(tileWatch));
+    tiles.addTo(map);
 
     mapMarkers = {};
     const bounds = [];
@@ -745,10 +773,13 @@
     try {
       await loadVenues();
       await loadAreas();
-      watchVenues();
-      // Карта — украшение поверх списка: грузим её в фоне, чтобы медленный или
-      // недоступный CDN не задерживал живые статусы заведений.
-      initMap().catch(() => { const m = $('venueMap'); if (m) m.remove(); });
+      // Опрос по таймеру стартует сразу: живой статус не должен зависеть от карты.
+      watchVenuesByTimer();
+      // Карта — украшение поверх списка, грузится в фоне. Поток событий
+      // подключается после неё, чтобы не занимать соединение раньше времени.
+      initMap()
+        .catch(() => { const m = $('venueMap'); if (m) m.remove(); })
+        .then(watchVenuesLive, watchVenuesLive);
       const saved = storage.get('venueId', null);
       const preset = window.EPU.qs('venue') || saved;
       if (preset && state.venues.some(v => v.id === preset)) await selectVenue(preset);
