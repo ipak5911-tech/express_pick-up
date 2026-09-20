@@ -370,6 +370,22 @@ async function run() {
   r = await get(`/api/admin/${venueId}`);
   ok(r.data.settings.autoKitchen === false, 'автопилот кухни выключен — статусы двигает человек');
 
+  // Стресс-тест: жюри создаёт наплыв и видит, что времена закрываются
+  await post(`/api/demo/${venueId}/showcase`);
+  const rushOne = await post(`/api/demo/${venueId}/rush`);
+  ok(rushOne.data.created > 0, `наплыв принят: ${rushOne.data.created} заказов`);
+  ok(rushOne.data.availableAfter <= rushOne.data.availableBefore,
+    `доступных времён стало не больше: ${rushOne.data.availableBefore} → ${rushOne.data.availableAfter}`);
+  ok(Array.isArray(rushOne.data.closedSlots) && rushOne.data.closedSlots.length > 0,
+    `закрылись времена: ${rushOne.data.closedSlots.join(', ')}`);
+
+  let saturated = rushOne.data;
+  for (let i = 0; i < 6 && !saturated.saturated; i++) {
+    saturated = (await post(`/api/demo/${venueId}/rush`)).data;
+  }
+  ok(saturated.saturated === true,
+    'при исчерпании мощности система отказывается принимать заказы, а не обещает невыполнимое');
+
   // ---------- устойчивость ----------
   section('Устойчивость');
   for (const badUrl of ['/%E0%A4%A', '/%', '/api/%ZZ']) {

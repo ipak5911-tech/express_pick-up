@@ -15,6 +15,7 @@
     from: null,          // {lat, lon} — откуда гость едет
     mode: 'auto',        // auto | car | walk
     travel: null,        // результат расчёта дороги
+    ignoreTravel: false, // гость сказал, что уже рядом
     workSeconds: 0,
     minCookSlots: 1,
     busy: false
@@ -737,7 +738,11 @@
     try {
       data = await api(`/api/venues/${encodeURIComponent(state.venue.id)}/slots`, {
         method: 'POST',
-        body: { items: cartPayload(), from: state.from, mode: state.mode === 'auto' ? undefined : state.mode }
+        body: {
+          items: cartPayload(),
+          from: state.ignoreTravel ? null : state.from,
+          mode: state.mode === 'auto' ? undefined : state.mode
+        }
       });
     } catch (e) {
       grid.innerHTML = '';
@@ -746,13 +751,81 @@
     }
     state.slots = data.slots;
     state.travel = data.travel;
+    state.explain = data;
     state.workSeconds = data.workSeconds;
     state.minCookSlots = data.minCookSlots;
     state.tooLarge = data.tooLarge;
     state.maxWorkMinutes = Math.floor(data.maxWorkSeconds / 60);
     renderTravel();
+    renderExplain();
     renderSlots();
   }, 120);
+
+  /**
+   * Объяснение, откуда берутся доступные времена.
+   *
+   * Без него сетка слотов выглядит произволом: гость видит серые клетки и не
+   * понимает, почему нельзя на 12:30. Три числа — объём его заказа, ёмкость
+   * интервала и ближайшее выполнимое время — делают правило прозрачным.
+   */
+  function renderExplain() {
+    const data = state.explain;
+    if (!data) return;
+    const grid = $('explainGrid');
+    const advice = $('explainAdvice');
+    const workMin = Math.max(1, Math.round(data.workSeconds / 60));
+    const capMin = Math.round((data.capacityPerSlot / 60) * 10) / 10;
+
+    const tile = (label, value) => el('div', {}, [
+      el('div', { class: 'tiny', style: 'color:var(--brand-text);font-weight:600', text: label }),
+      el('div', { style: 'font-weight:750;font-size:17px;margin-top:2px', text: value })
+    ]);
+
+    grid.innerHTML = '';
+    grid.appendChild(tile(t('explain.work'), t('explain.workValue', { n: workMin })));
+    grid.appendChild(tile(t('explain.capacity'), t('explain.capacityValue', { n: String(capMin).replace('.', ',') })));
+    grid.appendChild(tile(t('explain.first'),
+      data.firstAvailable ? data.firstAvailable.label : t('explain.firstNone')));
+
+    // Причина отказа и что с ней делать — по первому непустому основанию
+    advice.innerHTML = '';
+    const visible = state.slots.filter(s => s.reason !== 'closed');
+    const blockedBy = r => visible.some(s => s.reason === r);
+
+    if (data.tooLarge) {
+      advice.textContent = t('explain.adviceSplit', { n: Math.floor(data.maxWorkSeconds / 60) });
+      advice.style.color = 'var(--danger)';
+    } else if (!data.firstAvailable && blockedBy('too_far') && data.firstIfNearby) {
+      advice.appendChild(el('span', { text: t('explain.adviceTravel', { t: data.firstIfNearby.label }) }));
+      advice.appendChild(el('button', {
+        class: 'btn btn-sm', type: 'button', style: 'margin-left:10px',
+        text: t('explain.nearby'), onclick: () => { state.ignoreTravel = true; loadSlots(); }
+      }));
+      advice.style.color = 'var(--warn)';
+    } else if (blockedBy('too_far') && data.firstAvailable) {
+      advice.appendChild(el('span', { text: t('explain.adviceTravel', { t: data.firstAvailable.label }) }));
+      advice.appendChild(el('button', {
+        class: 'btn btn-sm', type: 'button', style: 'margin-left:10px',
+        text: t('explain.nearby'), onclick: () => { state.ignoreTravel = true; loadSlots(); }
+      }));
+      advice.style.color = 'var(--warn)';
+    } else if (blockedBy('kitchen_full') && data.firstAvailable) {
+      advice.textContent = t('explain.adviceKitchen', { t: data.firstAvailable.label });
+      advice.style.color = 'var(--warn)';
+    } else if (blockedBy('handoff_full') && data.firstAvailable) {
+      advice.textContent = t('explain.adviceHandoff', { t: data.firstAvailable.label });
+      advice.style.color = 'var(--warn)';
+    } else {
+      advice.textContent = t('explain.adviceOk');
+      advice.style.color = 'var(--ok)';
+    }
+
+    if (state.ignoreTravel) {
+      advice.appendChild(el('span', {
+        class: 'badge badge-info', style: 'margin-left:8px', text: t('explain.nearbyOn')
+      }));
+    }
+  }
 
   function renderSlots() {
     const grid = $('slotGrid');
@@ -957,7 +1030,7 @@
     document.addEventListener('langchange', () => {
       if (!state.venue) { loadVenues(); return; }
       renderCats(); renderMenu(); renderCartBar();
-      if (state.step === 2) { renderTravel(); renderSlots(); }
+      if (state.step === 2) { renderTravel(); renderExplain(); renderSlots(); }
       if (state.step === 3) renderPay();
       $('venuePoint').textContent = t('guest.pickupPoint') + ': ' + state.venue.pickupPoint;
       updateRepeatButton();

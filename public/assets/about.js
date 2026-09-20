@@ -1,6 +1,7 @@
 /* Express Pick-Up — страница проекта: что решаем, как устроено, что видно прямо сейчас */
 (function () {
   const { api, el, waitLabel, mountHeader, t, toast } = window.EPU;
+  const EPU = window.EPU;
   const $ = id => document.getElementById(id);
 
   const SOLUTION_ROWS = [
@@ -146,9 +147,106 @@
     }
   }
 
+  /**
+   * Маршрут жюри: одно заведение во всех ссылках и QR, закодированный на
+   * текущий адрес страницы. Открытая на localhost страница даёт QR, который
+   * телефон не откроет, — об этом надо предупредить прямо, а не молчать.
+   */
+  const DEMO_VENUE = 'kaganat-abay';
+
+  function renderJudgeFlow() {
+    const steps = ['judge.s1', 'judge.s2', 'judge.s3', 'judge.s4', 'judge.s5', 'judge.s6'];
+    const list = $('judgeSteps');
+    list.innerHTML = '';
+    for (const key of steps) list.appendChild(el('li', { text: t(key) }));
+
+    $('judgeQr').src = '/api/guest-link-qr.svg?venue=' + encodeURIComponent(DEMO_VENUE);
+
+    const q = '?venue=' + encodeURIComponent(DEMO_VENUE);
+    $('linkGuest').href = '/' + q;
+    $('linkKitchen').href = '/kitchen' + q;
+    $('linkPickup').href = '/pickup' + q;
+    $('linkAdmin').href = '/admin' + q;
+
+    const host = location.host;
+    const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])/.test(host);
+    const note = $('judgeHost');
+    note.textContent = isLocal ? t('judge.localhost') : t('judge.lan', { host });
+    note.style.color = isLocal ? 'var(--danger)' : 'var(--text-faint)';
+  }
+
+  /**
+   * «Попробуйте сломать обещание» — главный довод показа.
+   *
+   * Обычное приложение приняло бы все заказы и переложило ожидание на гостя.
+   * Здесь жюри своими руками создаёт наплыв и видит, что невыполнимое время
+   * перестаёт продаваться. Действие защищено кодом персонала, поэтому при
+   * первом нажатии спрашивается код.
+   */
+  async function runStress() {
+    const btn = $('stressBtn');
+    const host = $('stressResult');
+    btn.disabled = true;
+    try {
+      const res = await api(`/api/demo/${DEMO_VENUE}/rush`, { method: 'POST' });
+      host.innerHTML = '';
+
+      const rows = [
+        el('div', { style: 'font-weight:700;font-size:16px', text: t('stress.accepted', { n: res.created }) }),
+        el('div', {
+          class: 'small', style: 'margin-top:4px',
+          text: res.closedSlots && res.closedSlots.length
+            ? t('stress.closed', { list: res.closedSlots.join(', ') })
+            : t('stress.closedNone')
+        }),
+        el('div', {
+          class: 'small', style: 'margin-top:4px;font-weight:600',
+          text: res.nextGuaranteed ? t('stress.next', { t: res.nextGuaranteed }) : t('stress.none')
+        })
+      ];
+      if (res.saturated) {
+        rows.push(el('div', {
+          class: 'badge badge-danger', style: 'margin-top:8px;white-space:normal;text-align:left',
+          text: t('stress.saturated')
+        }));
+      }
+      rows.push(el('div', { class: 'tiny', style: 'margin-top:10px;color:var(--text-dim)', text: t('stress.point') }));
+      rows.forEach(r => host.appendChild(r));
+      $('stressReset').classList.remove('hidden');
+      renderLive();
+    } catch (e) {
+      if (e.error === 'staff_auth') {
+        EPU.storage.del('staffPin');
+        EPU.staffGate('/api/staff/check', runStress);
+      } else {
+        toast(e.message || t('common.error'), true);
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function resetShowcase() {
+    const btn = $('stressReset');
+    btn.disabled = true;
+    try {
+      await api(`/api/demo/${DEMO_VENUE}/showcase`, { method: 'POST' });
+      $('stressResult').innerHTML = '';
+      btn.classList.add('hidden');
+      renderLive();
+    } catch (e) {
+      toast(e.message || t('common.error'), true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function renderAll() {
     renderStaticLists();
     renderEngine();
+    renderJudgeFlow();
+    $('stressBtn').onclick = runStress;
+    $('stressReset').onclick = resetShowcase;
     $('pinHint').textContent = t('about.pinHint');
   }
 

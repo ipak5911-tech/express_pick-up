@@ -211,6 +211,19 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, { ok: true });
   }
 
+  // GET /api/guest-link-qr.svg?venue=... — QR на гостевой экран.
+  // Кодируется текущий Host, поэтому со страницы, открытой по адресу в
+  // локальной сети, код сразу работает с телефона, а с localhost — нет.
+  if (method === 'GET' && pathname === '/api/guest-link-qr.svg') {
+    const v = store.venue(query.venue || '');
+    if (!v) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');
+    const host = req.headers.host || `localhost:${PORT}`;
+    const link = `http://${host}/?venue=${encodeURIComponent(v.id)}`;
+    const svg = qr.toSvg(link, { scale: 6, quiet: 2 });
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(svg);
+  }
+
   // GET /api/impact — публичные агрегированные метрики для страницы «О проекте».
   // Только сводные числа, без состава заказов и контактов гостей.
   if (method === 'GET' && pathname === '/api/impact') {

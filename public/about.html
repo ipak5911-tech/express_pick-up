@@ -13,15 +13,37 @@
 <main class="wrap">
 
   <h1 data-i18n="about.h1"></h1>
+  <p style="font-size:18px;font-weight:650;color:var(--brand-text);margin:-2px 0 8px" data-i18n="about.tagline"></p>
   <p class="lede" data-i18n="about.lede"></p>
 
-  <div class="grid grid-2" style="margin-bottom:22px">
-    <a class="btn btn-primary btn-lg" href="/" data-i18n="about.tryGuest"></a>
-    <a class="btn btn-lg" href="/kitchen" data-i18n="about.tryKitchen"></a>
-    <a class="btn btn-lg" href="/pickup" data-i18n="about.tryPickup"></a>
-    <a class="btn btn-lg" href="/admin" data-i18n="about.tryAdmin"></a>
+  <div class="card" style="border-color:var(--brand)">
+    <h2 style="margin:0 0 4px" data-i18n="judge.h"></h2>
+    <p class="small muted" style="margin:0 0 14px" data-i18n="judge.lede"></p>
+    <div class="row" style="gap:18px;align-items:flex-start;flex-wrap:wrap">
+      <div class="qr-box"><img id="judgeQr" alt="QR" src=""></div>
+      <div style="flex:1 1 260px;min-width:250px">
+        <ol class="small" id="judgeSteps" style="margin:0;padding-left:20px;line-height:1.9"></ol>
+        <div class="tiny faint" style="margin-top:8px" id="judgeHost"></div>
+      </div>
+    </div>
+    <div class="grid grid-2" style="margin-top:14px">
+      <a class="btn btn-primary" id="linkGuest" data-i18n="about.tryGuest"></a>
+      <a class="btn" id="linkKitchen" data-i18n="about.tryKitchen"></a>
+      <a class="btn" id="linkPickup" data-i18n="about.tryPickup"></a>
+      <a class="btn" id="linkAdmin" data-i18n="about.tryAdmin"></a>
+    </div>
+    <p class="tiny faint" style="margin:12px 0 0" id="pinHint"></p>
   </div>
-  <p class="tiny faint" style="margin:-12px 0 24px" id="pinHint"></p>
+
+  <div class="card" style="border-color:var(--warn);background:var(--warn-soft)">
+    <h2 style="margin:0 0 4px" data-i18n="stress.h"></h2>
+    <p class="small" style="margin:0 0 12px" data-i18n="stress.lede"></p>
+    <div class="row" style="gap:10px;flex-wrap:wrap">
+      <button class="btn btn-primary" type="button" id="stressBtn" data-i18n="stress.run"></button>
+      <button class="btn btn-sm hidden" type="button" id="stressReset" data-i18n="stress.reset"></button>
+    </div>
+    <div id="stressResult" style="margin-top:12px"></div>
+  </div>
 
   <h2 data-i18n="about.problemH"></h2>
   <div class="card">
