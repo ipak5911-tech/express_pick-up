@@ -25,6 +25,9 @@ const CHROME = process.env.CHROME_PATH ||
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const OUT = path.join(__dirname, '..', 'docs', 'ПРЕЗЕНТАЦИЯ.pdf');
 
+// Число автотестов берётся из отчёта последнего прогона `npm test`.
+const TESTS = 128;
+
 const venue = store.venue(VENUE_ID);
 if (!venue) {
   console.error(`Заведение ${VENUE_ID} не найдено. Запустите node scripts/seed-demo.js --fresh`);
@@ -81,7 +84,7 @@ const slides = [
         <div class="col"><div class="num">2</div><b>Время выдачи</b><p>Показаны только выполнимые интервалы.</p></div>
         <div class="col"><div class="num">3</div><b>Оплата или подтверждение</b><p>Онлайн либо на месте.</p></div>
       </div>
-      <p class="punch">Статус открывается по ссылке, номеру или QR-коду. Аккаунт не нужен: по номеру виден только статус, управление заказом даёт секретная ссылка.</p>`
+      <p class="punch">Статус открывается по ссылке, номеру или QR-коду. Аккаунт не нужен: по номеру виден только статус, управление заказом даёт секретная ссылка. Оставите почту — письмо придёт, когда заказ примут и когда он будет готов.</p>`
   },
   {
     title: 'Механика',
@@ -123,9 +126,10 @@ const slides = [
     html: `
       <div class="cols four">
         <div class="col"><b>Дорога гостя</b><p>Слот отсеивается, если до него не доехать: пробки Алматы по часам, заторность района, время на паркинг.</p></div>
-        <div class="col"><b>Калибровка</b><p>Система сверяет плановое время готовки с фактическими замерами и предлагает исправления.</p></div>
-        <div class="col"><b>Сбои</b><p>Снятие заказа с причиной и возвратом, неявка гостя, стоп-лист, живой статус заведений.</p></div>
-        <div class="col"><b>Автономность</b><p>Ноль зависимостей npm, ${poi.total()} точек общепита города офлайн, ${'91'} автоматический тест.</p></div>
+        <div class="col"><b>Выдача по QR</b><p>Сотрудник сканирует код гостя прямо в приложении — заказ закрывается за секунду, без поиска по спискам.</p></div>
+        <div class="col"><b>Связь с гостем</b><p>Письма на каждом шаге со ссылкой на живой статус: вкладку можно закрыть. Свой SMTP, без сторонних сервисов.</p></div>
+        <div class="col"><b>Калибровка и сбои</b><p>Плановое время готовки сверяется с замерами. Снятие заказа с возвратом, неявка, стоп-лист.</p></div>
+        <div class="col"><b>Автономность</b><p>Ноль зависимостей npm, ${poi.total()} точек общепита города офлайн, ${TESTS} автоматических теста.</p></div>
       </div>`
   },
   {
@@ -158,7 +162,10 @@ h2 { font-size: 28pt; letter-spacing: -.02em; margin: 0 0 2mm; }
 .foot { position: absolute; left: 20mm; bottom: 14mm; font-size: 11pt; color: #8b95a3; }
 .body { flex: 1; display: flex; flex-direction: column; justify-content: center; }
 .cols { display: flex; gap: 8mm; }
-.cols.four .col { flex: 1 1 0; }
+.cols.four { gap: 5mm; }
+.cols.four .col { flex: 1 1 0; padding: 5mm; }
+.cols.four .col b { font-size: 12.5pt; }
+.cols.four .col p { font-size: 11pt; }
 .col { flex: 1 1 0; background: #f5f6f8; border: 1px solid #e2e5ea; border-radius: 4mm; padding: 6mm; }
 .col.warn { background: #fdf3e2; border-color: #f0d9ab; }
 .col b { display: block; font-size: 14pt; margin-bottom: 2mm; }
