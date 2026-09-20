@@ -259,12 +259,50 @@ async function run() {
   ok(r.data.ready.some(o => o.code === code), 'заказ на табло выдачи');
 
   const ready = r.data.ready.find(o => o.code === code);
+  // Ручная выдача остаётся рабочей: у гостя может сесть телефон
   await post(`/api/kitchen/orders/${ready.id}/status`, { status: 'picked_up' });
   r = await get('/api/orders/' + token, false);
-  ok(r.data.status === 'picked_up', 'заказ выдан');
+  ok(r.data.status === 'picked_up', 'заказ выдан вручную, без QR');
 
   r = await post(`/api/orders/${token}/rate`, { rating: 5 }, false);
   ok(r.data.rating === 5, 'оценка сохранена');
+
+  // ---------- подтверждение выдачи по QR ----------
+  section('Выдача по QR-коду');
+  const qrItems = { items: [{ itemId: 'c-compote', qty: 1, options: [] }] };
+  r = await post(`/api/venues/${venueId}/slots`, qrItems, false);
+  const qrSlot = r.data.slots.find(x => x.available);
+  r = await post(`/api/venues/${venueId}/orders`, Object.assign({ slotStart: qrSlot.start, payment: 'online' }, qrItems), false);
+  const qrToken = r.data.order.token;
+  const qrCode = r.data.order.code;
+
+  r = await get(`/api/orders/${qrToken}/qr.svg`, false);
+  ok(String(r.data).startsWith('<svg'), 'QR заказа отдаётся');
+  r = await get(`/handoff/${qrToken}`, false);
+  ok(r.status === 200 && String(r.data).includes('handoff.js'), 'QR ведёт на страницу подтверждения выдачи');
+
+  r = await post('/api/pickup/confirm', { token: qrToken }, false);
+  ok(r.status === 401, 'подтверждение выдачи требует кода персонала');
+
+  r = await post('/api/pickup/confirm', { token: qrToken });
+  ok(r.status === 409 && r.data.error === 'order_not_ready', 'неготовый заказ по QR не выдаётся');
+
+  r = await get('/api/kitchen/' + venueId);
+  const qrOrder = r.data.queue.find(o => o.code === qrCode);
+  await post(`/api/kitchen/orders/${qrOrder.id}/advance`);
+  await post(`/api/kitchen/orders/${qrOrder.id}/advance`);
+
+  r = await post('/api/pickup/confirm', { token: qrToken });
+  ok(r.status === 200 && r.data.issued && !r.data.alreadyIssued,
+    `сканирование QR выдало заказ №${r.data.order.code}`);
+  r = await post('/api/pickup/confirm', { token: qrToken });
+  ok(r.data.alreadyIssued === true, 'повторное сканирование безопасно');
+
+  r = await post('/api/pickup/confirm', { token: 'нетакойтокен' });
+  ok(r.status === 400 && r.data.error === 'bad_qr', 'мусорный QR отклонён');
+
+  r = await get('/api/orders/' + qrToken, false);
+  ok(r.data.status === 'picked_up', 'гость видит, что заказ выдан');
 
   // ---------- сценарии сбоев ----------
   section('Сценарии сбоев');

@@ -7,7 +7,16 @@
   let stream = null;
   const $ = id => document.getElementById(id);
 
+  /**
+   * Выдача без сканирования — запасной путь.
+   *
+   * Основной способ подтверждения — QR гостя: сотрудник сканирует код, и
+   * система точно знает, что заказ получил именно он. Но у гостя может сесть
+   * телефон, а камера — не поймать код, поэтому ручная выдача остаётся. Она
+   * требует подтверждения и отмечается в заказе как ручная.
+   */
   async function hand(order) {
+    if (!confirm(t('pickup.manualConfirm', { code: order.code }))) return;
     try {
       await api(`/api/kitchen/orders/${encodeURIComponent(order.id)}/status`, {
         method: 'POST', body: { status: 'picked_up' }
@@ -33,9 +42,14 @@
         o.paymentStatus !== 'paid'
           ? el('div', { class: 'badge badge-warn', style: 'margin-top:6px', text: money(o.total) })
           : null,
+        el('div', {
+          class: 'badge badge-brand',
+          style: 'margin-top:9px;white-space:normal;display:block;text-align:center',
+          text: t('pickup.scanQr')
+        }),
         el('button', {
-          class: 'btn btn-sm btn-ok', style: 'margin-top:9px;width:100%', type: 'button',
-          text: t('pickup.hand'), onclick: () => hand(o)
+          class: 'btn btn-sm btn-ghost', style: 'margin-top:6px;width:100%;font-size:12px',
+          type: 'button', text: t('pickup.manual'), onclick: () => hand(o)
         })
       ]));
     }
@@ -55,6 +69,7 @@
     for (const o of data.recentlyPicked) {
       recent.appendChild(el('div', { class: 'row-between small muted' }, [
         el('span', { class: 'num', text: o.code }),
+        el('span', { class: 'badge badge-ok', text: t('pickup.issued') }),
         el('span', { class: 'tiny faint num', text: hhmm(o.pickedUpAt) })
       ]));
     }

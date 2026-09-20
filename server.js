@@ -87,6 +87,19 @@ function sendError(res, status, code, message, extra) {
   sendJson(res, status, Object.assign({ error: code, message: message || code }, extra || {}));
 }
 
+/**
+ * Адрес для QR-ссылок. Если страница открыта на ноутбуке через localhost,
+ * телефон такой QR не откроет: localhost на телефоне — это сам телефон.
+ * Поэтому для кода подставляется первый адрес ноутбука в локальной сети.
+ */
+function publicLinkHost(req) {
+  const host = String(req.headers.host || `localhost:${PORT}`);
+  const loopback = /^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host);
+  if (!loopback) return host;
+  const lan = localAddresses()[0];
+  return lan ? `${lan}:${PORT}` : host;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -217,7 +230,7 @@ async function handleApi(req, res, pathname, query) {
   if (method === 'GET' && pathname === '/api/guest-link-qr.svg') {
     const v = store.venue(query.venue || '');
     if (!v) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');
-    const host = req.headers.host || `localhost:${PORT}`;
+    const host = publicLinkHost(req);
     const link = `http://${host}/?venue=${encodeURIComponent(v.id)}`;
     const svg = qr.toSvg(link, { scale: 6, quiet: 2 });
     res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -394,8 +407,10 @@ async function handleApi(req, res, pathname, query) {
   if (method === 'GET' && seg[1] === 'orders' && seg[3] === 'qr.svg') {
     const o = store.orderByToken(seg[2]);
     if (!o) return sendError(res, 404, 'unknown_order', 'Заказ не найден');
-    const host = req.headers.host || `localhost:${PORT}`;
-    const link = `http://${host}/o/${o.token}`;
+    // QR ведёт на защищённое подтверждение выдачи: его сканирует сотрудник,
+    // а не гость. Гостю ссылка на статус и так открыта в браузере.
+    const host = publicLinkHost(req);
+    const link = `http://${host}/handoff/${o.token}`;
     const svg = qr.toSvg(link, { scale: 6, quiet: 2 });
     res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(svg);
@@ -461,9 +476,16 @@ async function handleApi(req, res, pathname, query) {
     const o = store.orderById(seg[3]);
     if (!o) return sendError(res, 404, 'unknown_order', 'Заказ не найден');
     try {
-      if (seg[4] === 'advance') orders.advance(o, now);
+      if (seg[4] === 'advance') {
+        if (o.status === 'ready' && !o.handoffMethod) o.handoffMethod = 'manual';
+        orders.advance(o, now);
+      }
       else if (seg[4] === 'status') {
         const body = await readBody(req);
+        // Выдача без QR остаётся возможной: у гостя может сесть телефон, а
+        // камера — не поймать код. Запрещать её значило бы сделать сервис
+        // неработоспособным в самой обычной ситуации. Но способ фиксируется.
+        if (body.status === 'picked_up' && !o.handoffMethod) o.handoffMethod = 'manual';
         orders.setStatus(o, body.status, now);
       } else if (seg[4] === 'cancel') {
         const body = await readBody(req);
@@ -475,6 +497,33 @@ async function handleApi(req, res, pathname, query) {
       return sendError(res, 409, e.code || 'error', e.message);
     }
     return sendJson(res, 200, { ok: true, status: o.status, refund: o.refund });
+  }
+
+  // POST /api/pickup/confirm — подтверждение выдачи по отсканированному QR.
+  // Повторный запрос идемпотентен: второе сканирование ничего не ломает.
+  if (method === 'POST' && pathname === '/api/pickup/confirm') {
+    const body = await readBody(req);
+    const token = body && typeof body.token === 'string' ? body.token.trim() : '';
+    if (!/^[a-z2-9]{12}$/.test(token)) {
+      return sendError(res, 400, 'bad_qr', 'Некорректный QR-код заказа');
+    }
+    const o = store.orderByToken(token);
+    if (!o) return sendError(res, 404, 'unknown_order', 'Заказ не найден');
+    if (o.status === 'picked_up') {
+      return sendJson(res, 200, {
+        ok: true, issued: true, alreadyIssued: true,
+        order: { code: o.code, status: o.status, venueId: o.venueId, pickedUpAt: o.pickedUpAt }
+      });
+    }
+    if (o.status !== 'ready') {
+      return sendError(res, 409, 'order_not_ready', 'Заказ ещё не готов к выдаче', { status: o.status });
+    }
+    o.handoffMethod = 'qr';
+    orders.setStatus(o, 'picked_up', now);
+    return sendJson(res, 200, {
+      ok: true, issued: true, alreadyIssued: false,
+      order: { code: o.code, status: o.status, venueId: o.venueId, pickedUpAt: o.pickedUpAt }
+    });
   }
 
   // GET /api/pickup/:venueId
@@ -688,6 +737,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, query);
 
     if (pathname.startsWith('/o/')) return serveFile(res, path.join(PUBLIC_DIR, 'order.html'));
+    if (pathname.startsWith('/handoff/')) return serveFile(res, path.join(PUBLIC_DIR, 'handoff.html'));
     if (PAGES[pathname]) return serveFile(res, path.join(PUBLIC_DIR, PAGES[pathname]));
 
     // статические файлы, защита от выхода за пределы public/
@@ -774,4 +824,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, ensureSeed };
+module.exports = { server, ensureSeed, publicLinkHost };
