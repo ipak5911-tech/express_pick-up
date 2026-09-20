@@ -41,20 +41,85 @@
     else state.cart.push(line);
     invalidateSlots();
     renderMenu();
+    renderCartList();
     renderCartBar();
   }
 
   function changeQty(line, delta) {
     line.qty += delta;
     if (line.qty <= 0) state.cart = state.cart.filter(l => l !== line);
-    invalidateSlots();
+    // Выбранный слот теряет силу только если работы стало больше: меньший
+    // заказ помещается туда же, куда помещался больший.
+    if (delta > 0) invalidateSlots();
+    afterCartChange();
+  }
+
+  /** Убрать строку целиком — независимо от количества и модификаторов. */
+  function removeLine(line) {
+    state.cart = state.cart.filter(l => l !== line);
+    toast(t('guest.removed'));
+    afterCartChange();
+  }
+
+  function clearCart() {
+    if (!state.cart.length) return;
+    state.cart = [];
+    state.slot = null;
+    toast(t('guest.cartCleared'));
+    afterCartChange();
+  }
+
+  /** Общие последствия любой правки корзины, с учётом текущего шага. */
+  function afterCartChange() {
+    if (!state.cart.length && state.step !== 1) {
+      goStep(1);
+      return;
+    }
     renderMenu();
+    renderCartList();
     renderCartBar();
     if (state.step === 2) loadSlots();
     if (state.step === 3) renderPay();
   }
 
   function invalidateSlots() { state.slot = null; }
+
+  /** Строка корзины с управлением — одна и та же на шаге меню и на оплате. */
+  function cartLine(line, compact) {
+    return el('div', { class: 'line', style: 'align-items:center' }, [
+      el('div', { class: 'line-name' }, [
+        el('div', { text: line.name }),
+        line.optionNames.length ? el('div', { class: 'line-opts', text: line.optionNames.join(' \u00b7 ') }) : null
+      ]),
+      el('div', { class: 'qty' }, [
+        el('button', { type: 'button', text: '\u2212', 'aria-label': t('guest.remove'), onclick: () => changeQty(line, -1) }),
+        el('span', { text: String(line.qty) }),
+        el('button', { type: 'button', text: '+', onclick: () => changeQty(line, 1) })
+      ]),
+      el('div', { class: 'num', style: 'min-width:82px;text-align:right;white-space:nowrap', text: money(line.qty * line.unitPrice) }),
+      el('button', {
+        class: 'btn btn-ghost btn-sm', type: 'button', title: t('guest.remove'),
+        'aria-label': t('guest.remove'), text: '\u2715',
+        style: 'padding:4px 8px;color:var(--danger)', onclick: () => removeLine(line)
+      })
+    ]);
+  }
+
+  /** Корзина на шаге меню: что уже набрано, с возможностью поправить. */
+  function renderCartList() {
+    const card = $('cartCard');
+    const host = $('cartList');
+    if (!card || !host) return;
+    card.classList.toggle('hidden', state.cart.length === 0);
+    host.innerHTML = '';
+    for (const line of state.cart) host.appendChild(cartLine(line));
+    if (state.cart.length) {
+      host.appendChild(el('div', { class: 'row-between', style: 'margin-top:8px' }, [
+        el('b', { text: t('common.total') }),
+        el('b', { class: 'num', text: money(cartTotal()) })
+      ]));
+    }
+  }
 
   function cartPayload() {
     return state.cart.map(l => ({ itemId: l.itemId, qty: l.qty, options: l.options }));
@@ -187,6 +252,7 @@
     $('venuePoint').textContent = t('guest.pickupPoint') + ': ' + state.venue.pickupPoint;
     renderCats();
     renderMenu();
+    renderCartList();
     renderCartBar();
     goStep(1);
     updateRepeatButton();
@@ -884,15 +950,9 @@
   function renderPay() {
     const host = $('paySummary');
     host.innerHTML = '';
-    for (const l of state.cart) {
-      host.appendChild(el('div', { class: 'line' }, [
-        el('div', { class: 'line-name' }, [
-          el('div', { text: l.name }),
-          l.optionNames.length ? el('div', { class: 'line-opts', text: l.optionNames.join(' · ') }) : null
-        ]),
-        el('div', { class: 'num', style: 'white-space:nowrap' }, `×${l.qty}  ${money(l.qty * l.unitPrice)}`)
-      ]));
-    }
+    // Перед оплатой позицию всё ещё можно убрать: возвращаться на первый шаг
+    // ради одной лишней строки — лишний путь.
+    for (const l of state.cart) host.appendChild(cartLine(l, true));
     if (state.slot) {
       host.appendChild(el('div', { class: 'row-between', style: 'margin-top:10px' }, [
         el('span', { class: 'small muted', text: t('order.pickupAt', { t: state.slot.label }) }),
@@ -957,6 +1017,7 @@
     };
 
     $('repeatBtn').onclick = repeatLast;
+    $('cartClear').onclick = clearCart;
 
     $('nearMeBtn').onclick = toggleNearMe;
     $('poiBtn').onclick = togglePoi;
@@ -1034,7 +1095,7 @@
 
     document.addEventListener('langchange', () => {
       if (!state.venue) { loadVenues(); return; }
-      renderCats(); renderMenu(); renderCartBar();
+      renderCats(); renderMenu(); renderCartList(); renderCartBar();
       if (state.step === 2) { renderTravel(); renderExplain(); renderSlots(); }
       if (state.step === 3) renderPay();
       $('venuePoint').textContent = t('guest.pickupPoint') + ': ' + state.venue.pickupPoint;

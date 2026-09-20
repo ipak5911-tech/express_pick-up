@@ -67,8 +67,16 @@
         <h2 style="margin:0" data-i18n="guest.menu"></h2>
         <button class="btn btn-sm hidden" id="repeatBtn" data-i18n="guest.repeatLast"></button>
       </div>
+      <div class="card hidden" id="cartCard" style="margin-bottom:12px;border-color:var(--brand)">
+        <div class="row-between">
+          <h3 style="margin:0" data-i18n="guest.cart"></h3>
+          <button class="btn btn-ghost btn-sm" type="button" id="cartClear" data-i18n="guest.clearCart"></button>
+        </div>
+        <div id="cartList" style="margin-top:6px"></div>
+      </div>
       <div class="menu-cats" id="cats"></div>
       <div class="card" id="menuList"></div>
+
     </div>
 
     <!-- Шаг 2 -->
