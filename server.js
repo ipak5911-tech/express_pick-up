@@ -409,6 +409,9 @@ async function handleApi(req, res, pathname, query) {
     if (!o) return sendError(res, 404, 'unknown_order', 'Заказ не найден');
     // QR ведёт на защищённое подтверждение выдачи: его сканирует сотрудник,
     // а не гость. Гостю ссылка на статус и так открыта в браузере.
+    if (o.status !== 'ready') {
+      return sendError(res, 409, 'qr_unavailable', 'QR-код появится, когда заказ будет готов к выдаче');
+    }
     const host = publicLinkHost(req);
     const link = `http://${host}/handoff/${o.token}`;
     const svg = qr.toSvg(link, { scale: 6, quiet: 2 });
@@ -511,6 +514,10 @@ async function handleApi(req, res, pathname, query) {
     }
     const o = store.orderByToken(token);
     if (!o) return sendError(res, 404, 'unknown_order', 'Заказ не найден');
+    const requestedVenueId = body && typeof body.venueId === 'string' ? body.venueId.trim() : '';
+    if (requestedVenueId && o.venueId !== requestedVenueId) {
+      return sendError(res, 409, 'wrong_venue', 'Этот заказ оформлен в другой точке выдачи');
+    }
     if (o.status === 'picked_up') {
       return sendJson(res, 200, {
         ok: true, issued: true, alreadyIssued: true,

@@ -98,6 +98,7 @@ async function run() {
   ok(r.data.every(v => v.location && v.status), 'у каждой точки есть координаты и живой статус');
   const venueId = r.data[0].id;
   const venue = r.data[0];
+  const otherVenueId = r.data.find(v => v.id !== venueId).id;
   ok(venue.location && venue.location.lat > 43 && venue.location.lat < 44,
     `координаты Алматы у заведения (${venue.location.lat}, ${venue.location.lon})`);
 
@@ -209,7 +210,7 @@ async function run() {
   ok(r.data.status === 'new' && r.data.paymentStatus === 'paid', 'статус и оплата записаны');
 
   r = await get(`/api/orders/${token}/qr.svg`, false);
-  ok(r.status === 200 && String(r.data).startsWith('<svg'), 'QR-код отдаётся');
+  ok(r.status === 409 && r.data.error === 'qr_unavailable', 'QR-код скрыт, пока заказ не готов');
 
   // ---------- приватность номера заказа ----------
   section('Приватность');
@@ -235,6 +236,9 @@ async function run() {
   ok(r.status === 200, 'с кодом доступ открыт');
   r = await get('/api/impact', false);
   ok(r.status === 200, 'сводные метрики публичны');
+  r = await get('/pickup', false);
+  ok(r.status === 200 && String(r.data).includes('openScanner') && String(r.data).includes('vendor/jsQR.js'),
+    'сканер встроен в приложение выдачи');
 
   // ---------- кухня и выдача ----------
   section('Кухня и выдача');
@@ -259,6 +263,9 @@ async function run() {
   await post(`/api/kitchen/orders/${mine.id}/advance`);
   r = await get('/api/orders/' + token, false);
   ok(r.data.status === 'ready', 'заказ доведён до статуса «готов»');
+
+  r = await get(`/api/orders/${token}/qr.svg`, false);
+  ok(r.status === 200 && String(r.data).startsWith('<svg'), 'QR-код появился после готовности');
 
   r = await post(`/api/orders/${token}/cancel`, null, false);
   ok(r.status === 409, 'готовый заказ гость отменить не может');
@@ -286,7 +293,7 @@ async function run() {
   const qrCode = r.data.order.code;
 
   r = await get(`/api/orders/${qrToken}/qr.svg`, false);
-  ok(String(r.data).startsWith('<svg'), 'QR заказа отдаётся');
+  ok(r.status === 409 && r.data.error === 'qr_unavailable', 'QR заказа скрыт, пока он не готов');
   r = await get(`/handoff/${qrToken}`, false);
   ok(r.status === 200 && String(r.data).includes('handoff.js'), 'QR ведёт на страницу подтверждения выдачи');
 
@@ -301,7 +308,13 @@ async function run() {
   await post(`/api/kitchen/orders/${qrOrder.id}/advance`);
   await post(`/api/kitchen/orders/${qrOrder.id}/advance`);
 
-  r = await post('/api/pickup/confirm', { token: qrToken });
+  r = await get(`/api/orders/${qrToken}/qr.svg`, false);
+  ok(r.status === 200 && String(r.data).startsWith('<svg'), 'QR появился, когда заказ готов');
+
+  r = await post('/api/pickup/confirm', { token: qrToken, venueId: otherVenueId });
+  ok(r.status === 409 && r.data.error === 'wrong_venue', 'чужая точка не может выдать заказ');
+
+  r = await post('/api/pickup/confirm', { token: qrToken, venueId });
   ok(r.status === 200 && r.data.issued && !r.data.alreadyIssued,
     `сканирование QR выдало заказ №${r.data.order.code}`);
   r = await post('/api/pickup/confirm', { token: qrToken });
@@ -475,6 +488,30 @@ async function run() {
     if (m.size === m.version * 4 + 17 && m.modules.length === m.size) qrOk++;
   }
   ok(qrOk === samples.length, `матрицы построены для всех образцов (${qrOk}/${samples.length})`);
+
+  const jsQR = require('../public/assets/vendor/jsQR.js');
+  const scanValue = 'http://localhost:3000/handoff/abcdefghijkl';
+  const generated = qr.generate(scanValue);
+  const quiet = 4;
+  const scale = 7;
+  const imageSize = (generated.size + quiet * 2) * scale;
+  const pixels = new Uint8ClampedArray(imageSize * imageSize * 4);
+  pixels.fill(255);
+  for (let row = 0; row < generated.size; row++) {
+    for (let col = 0; col < generated.size; col++) {
+      if (!generated.modules[row][col]) continue;
+      for (let y = 0; y < scale; y++) {
+        for (let x = 0; x < scale; x++) {
+          const px = ((row + quiet) * scale + y) * imageSize + ((col + quiet) * scale + x);
+          pixels[px * 4] = 0;
+          pixels[px * 4 + 1] = 0;
+          pixels[px * 4 + 2] = 0;
+        }
+      }
+    }
+  }
+  const decoded = jsQR(pixels, imageSize, imageSize, { inversionAttempts: 'attemptBoth' });
+  ok(decoded && decoded.data === scanValue, 'сканер распознаёт QR-код выдачи');
 }
 
 (async () => {

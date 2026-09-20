@@ -22,6 +22,15 @@
     </div>
   </div>
 
+  <section class="pickup-scanner-card" aria-labelledby="scannerHeading">
+    <div class="pickup-scanner-icon" aria-hidden="true">▣</div>
+    <div class="pickup-scanner-copy">
+      <h2 id="scannerHeading" data-i18n="pickup.scannerTitle"></h2>
+      <p data-i18n="pickup.scannerDesc"></p>
+    </div>
+    <button class="btn btn-primary btn-lg" id="openScanner" type="button" data-i18n="pickup.openScanner"></button>
+  </section>
+
   <div class="board">
     <section>
       <div class="board-codes" id="readyList"></div>
@@ -39,8 +48,44 @@
     </aside>
   </div>
 </main>
+
+<div class="scanner-modal hidden" id="scannerModal" role="dialog" aria-modal="true" aria-labelledby="scannerDialogTitle">
+  <div class="scanner-dialog">
+    <div class="row-between scanner-head">
+      <div>
+        <h2 id="scannerDialogTitle" data-i18n="pickup.scannerTitle"></h2>
+        <div class="small muted" data-i18n="pickup.scannerHint"></div>
+      </div>
+      <button class="scanner-close" id="closeScanner" type="button" aria-label="Закрыть">×</button>
+    </div>
+
+    <div class="scanner-viewport" id="scannerViewport">
+      <video id="scannerVideo" playsinline muted></video>
+      <canvas id="scannerCanvas" class="hidden"></canvas>
+      <div class="scanner-placeholder" id="scannerPlaceholder" aria-hidden="true">
+        <span>📷</span>
+      </div>
+      <div class="scanner-frame" aria-hidden="true"><i></i></div>
+    </div>
+
+    <div class="scanner-status small" id="scannerStatus" role="status" aria-live="polite"></div>
+    <div class="scanner-actions" id="scannerActions">
+      <button class="btn btn-primary" id="startCamera" type="button" data-i18n="pickup.startCamera"></button>
+      <button class="btn" id="takeQrPhoto" type="button" data-i18n="pickup.takePhoto"></button>
+      <input class="hidden" id="qrImageInput" type="file" accept="image/*" capture="environment">
+    </div>
+
+    <div class="scanner-result hidden" id="scannerResult" role="status" aria-live="assertive">
+      <div class="scanner-result-icon" id="scannerResultIcon"></div>
+      <h2 id="scannerResultTitle"></h2>
+      <p id="scannerResultText"></p>
+      <button class="btn btn-primary btn-lg" id="scanNext" type="button" data-i18n="pickup.scanNext"></button>
+    </div>
+  </div>
+</div>
 <script src="/assets/i18n.js"></script>
 <script src="/assets/common.js"></script>
+<script src="/assets/vendor/jsQR.js"></script>
 <script src="/assets/pickup.js"></script>
 </body>
 </html>

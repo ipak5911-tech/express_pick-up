@@ -90,7 +90,7 @@
   }
 
   function countdownLine() {
-    if (!order || ['picked_up', 'cancelled'].includes(order.status)) return '';
+    if (!order || ['picked_up', 'cancelled', 'no_show'].includes(order.status)) return '';
     const slot = new Date(order.slotStart).getTime();
     const diff = slot - Date.now();
     if (order.status === 'ready' && order.arrivedAt) {
@@ -100,9 +100,82 @@
     return t('order.late', { t: mmss(-diff) });
   }
 
+  function statusVisual(status) {
+    const visuals = {
+      new: { icon: '✓', cls: 'accepted' },
+      cooking: { icon: '🍳', cls: 'cooking' },
+      ready: { icon: '🥡', cls: 'ready' },
+      cancelled: { icon: '×', cls: 'cancelled' },
+      no_show: { icon: '⌛', cls: 'no-show' }
+    };
+    const visual = visuals[status] || visuals.new;
+    return el('div', { class: 'order-visual ' + visual.cls, 'aria-hidden': 'true' }, [
+      el('div', { class: 'order-visual-glow' }),
+      status === 'cooking' ? el('div', { class: 'steam' }, [el('i'), el('i'), el('i')]) : null,
+      el('div', { class: 'order-visual-icon', text: visual.icon })
+    ]);
+  }
+
+  function ratingPanel() {
+    if (order.rating) {
+      return el('div', { class: 'issued-rating' }, [
+        el('div', { class: 'rating-stars', text: '★'.repeat(order.rating) }),
+        el('div', { class: 'small', text: t('order.rateThanks') })
+      ]);
+    }
+    return el('div', { class: 'issued-rating' }, [
+      el('div', { class: 'small', style: 'margin-bottom:10px', text: t('order.rate') }),
+      el('div', { class: 'rating-row' }, [1, 2, 3, 4, 5].map(n =>
+        el('button', {
+          class: 'rating-button', type: 'button', text: '★', 'aria-label': String(n),
+          onclick: async () => {
+            try {
+              order = await api(`/api/orders/${token}/rate`, { method: 'POST', body: { rating: n } });
+              render();
+            } catch (e) { toast(e.message || t('common.error'), true); }
+          }
+        })
+      ))
+    ]);
+  }
+
+  function renderIssued(host) {
+    document.body.classList.add('order-issued-page');
+    const pieces = Array.from({ length: 30 }, (_, i) => el('i', {
+      class: 'confetti-piece',
+      style: `--x:${(i * 47) % 100};--delay:${(i % 10) * 0.08}s;--spin:${(i * 37) % 180}deg;--tone:${i % 5}`
+    }));
+
+    host.appendChild(el('section', { class: 'issued-screen', role: 'status', 'aria-live': 'polite' }, [
+      el('div', { class: 'confetti', 'aria-hidden': 'true' }, pieces),
+      el('div', { class: 'issued-content' }, [
+        el('div', { class: 'issued-check', 'aria-hidden': 'true' }, [
+          el('span', { text: '✓' })
+        ]),
+        el('div', { class: 'issued-eyebrow', text: t('order.issuedEyebrow') }),
+        el('h1', { class: 'issued-title', text: t('order.picked') }),
+        el('p', { class: 'issued-message', text: t('order.issuedMessage', { code: order.code }) }),
+        el('div', { class: 'issued-code' }, [
+          el('span', { text: t('order.yourNumber') }),
+          el('b', { class: 'num', text: order.code })
+        ]),
+        order.venue ? el('div', { class: 'issued-venue', text: t('order.issuedVenue', { venue: order.venue.name }) }) : null,
+        el('p', { class: 'issued-next', text: t('order.issuedNext') }),
+        ratingPanel(),
+        el('a', {
+          class: 'btn issued-new-order',
+          href: order.venue ? '/?venue=' + order.venue.id : '/',
+          text: t('order.newOrder')
+        })
+      ])
+    ]));
+  }
+
   function render() {
     const host = document.getElementById('content');
     host.innerHTML = '';
+    document.body.classList.remove('order-issued-page');
+    delete document.body.dataset.orderStatus;
 
     if (!order) {
       host.appendChild(el('div', { class: 'card' }, [
@@ -113,31 +186,44 @@
       return;
     }
 
+    document.body.dataset.orderStatus = order.status;
+    if (order.status === 'picked_up') {
+      renderIssued(host);
+      return;
+    }
+
     const stepIndex = STEPS.indexOf(order.status);
     const isReady = order.status === 'ready';
     if (order.status !== 'cancelled' && order.status !== 'no_show') { /* обычный ход */ }
 
     // Герой со статусом и номером
-    host.appendChild(el('div', { class: 'status-hero' + (isReady ? ' ready' : ''), style: 'margin-top:20px' }, [
+    host.appendChild(el('div', { class: 'status-hero status-' + order.status, style: 'margin-top:20px' }, [
+      statusVisual(order.status),
       el('div', { class: 'small muted', text: t('order.yourNumber') }),
       el('div', { class: 'order-code', text: order.code }),
       el('div', { style: 'margin-top:10px;font-weight:700;font-size:18px', text: t(statusTitle[order.status]) }),
       el('div', { class: 'small muted', style: 'margin-top:2px', text: t(statusText[order.status], { t: hhmm(order.slotStart) }) }),
       order.status !== 'cancelled' ? el('div', { class: 'progress-track' },
         STEPS.slice(0, 4).map((s, i) => el('i', { class: i <= stepIndex ? 'on' : '' }))) : null,
+      order.status !== 'cancelled' && order.status !== 'no_show' ? el('div', { class: 'progress-labels' }, [
+        el('span', { class: stepIndex >= 0 ? 'on' : '', text: t('order.accepted') }),
+        el('span', { class: stepIndex >= 1 ? 'on' : '', text: t('order.cooking') }),
+        el('span', { class: stepIndex >= 2 ? 'on' : '', text: t('order.ready') }),
+        el('span', { class: stepIndex >= 3 ? 'on' : '', text: t('order.picked') })
+      ]) : null,
       el('div', { id: 'countdown', class: 'small num', style: 'color:var(--text-dim)', text: countdownLine() })
     ]));
 
-    // QR + точка выдачи
-    if (!['cancelled'].includes(order.status)) {
-      host.appendChild(el('div', { class: 'card' }, [
+    // QR появляется только после готовности: до этого гостю нечего случайно сканировать.
+    if (isReady) {
+      host.appendChild(el('div', { class: 'card qr-card qr-ready' }, [
         el('div', { class: 'row', style: 'gap:16px;align-items:flex-start;flex-wrap:wrap' }, [
-          el('div', { class: 'qr-box' }, [el('img', { src: `/api/orders/${order.token}/qr.svg`, alt: 'QR' })]),
+          el('div', { class: 'qr-box' }, [el('img', { src: `/api/orders/${order.token}/qr.svg`, alt: t('order.qrAlt') })]),
           el('div', { style: 'flex:1 1 200px;min-width:200px' }, [
             el('div', { class: 'small muted', text: t('order.pickupPoint') }),
             el('b', { style: 'display:block;font-size:16px;margin:2px 0 6px', text: order.venue ? order.venue.pickupPoint : '' }),
             el('div', { class: 'tiny faint', text: order.venue ? order.venue.name + ' · ' + order.venue.address : '' }),
-            el('div', { class: 'small', style: 'margin-top:10px', text: t('order.showCode') }),
+            el('div', { class: 'small qr-hint', style: 'margin-top:10px', text: t('order.showCode') }),
             el('div', { class: 'row', style: 'margin-top:10px;gap:8px;flex-wrap:wrap' }, [
               el('span', { class: 'badge badge-brand', text: t('order.pickupAt', { t: hhmm(order.slotStart) }) }),
               el('span', {
@@ -146,6 +232,15 @@
               })
             ])
           ])
+        ])
+      ]));
+    } else if (['new', 'cooking'].includes(order.status)) {
+      host.appendChild(el('div', { class: 'card qr-wait-card' }, [
+        el('div', { class: 'qr-wait-icon', 'aria-hidden': 'true', text: '🔒' }),
+        el('div', { style: 'flex:1;min-width:0' }, [
+          el('b', { text: t('order.qrHiddenTitle') }),
+          el('div', { class: 'small muted', style: 'margin-top:3px', text: t('order.qrWait') }),
+          el('div', { class: 'tiny faint', style: 'margin-top:8px', text: order.venue ? order.venue.pickupPoint : '' })
         ])
       ]));
     }
@@ -224,28 +319,6 @@
       }));
     }
 
-    if (order.status === 'picked_up') {
-      if (order.rating) {
-        actions.appendChild(el('div', { class: 'card', style: 'text-align:center' }, [
-          el('div', { style: 'font-size:22px', text: '★'.repeat(order.rating) }),
-          el('div', { class: 'small muted', text: t('order.rateThanks') })
-        ]));
-      } else {
-        actions.appendChild(el('div', { class: 'card', style: 'text-align:center' }, [
-          el('div', { class: 'small muted', style: 'margin-bottom:8px', text: t('order.rate') }),
-          el('div', { class: 'row', style: 'justify-content:center;gap:6px' }, [1, 2, 3, 4, 5].map(n =>
-            el('button', {
-              class: 'btn btn-sm', type: 'button', text: '★ ' + n,
-              onclick: async () => {
-                try { order = await api(`/api/orders/${token}/rate`, { method: 'POST', body: { rating: n } }); render(); }
-                catch (e) { toast(e.message || t('common.error'), true); }
-              }
-            })
-          ))
-        ]));
-      }
-    }
-
     actions.appendChild(el('div', { class: 'row', style: 'gap:8px;justify-content:center;margin-top:4px' }, [
       el('a', { class: 'btn btn-sm', href: order.venue ? '/?venue=' + order.venue.id : '/', text: t('order.newOrder') }),
       el('button', {
@@ -267,6 +340,10 @@
       order = null;
     }
     if (order && order.status === 'ready' && lastStatus && lastStatus !== 'ready') announceReady();
+    if (order && order.status === 'picked_up' && lastStatus && lastStatus !== 'picked_up') {
+      try { if (navigator.vibrate) navigator.vibrate([120, 60, 220]); } catch (e) { /* нет вибрации */ }
+      toast(t('order.picked'));
+    }
     if (order) lastStatus = order.status;
     render();
   }

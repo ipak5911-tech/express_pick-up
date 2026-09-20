@@ -130,7 +130,7 @@ public/                четыре экрана, общий CSS и словар
 | `POST /api/venues/:id/slots`              | доступные интервалы под конкретную корзину |
 | `POST /api/venues/:id/orders`             | создать заказ                            |
 | `GET  /api/orders/:token`                 | статус заказа                            |
-| `GET  /api/orders/:token/qr.svg`          | QR-код со ссылкой на статус              |
+| `GET  /api/orders/:token/qr.svg`          | QR выдачи (409, пока заказ не готов)     |
 | `POST /api/orders/:token/arrived`         | гость подошёл к стойке                   |
 | `POST /api/orders/:token/cancel`          | отмена (до готовности)                   |
 | `POST /api/orders/:token/rate`            | оценка выдачи                            |
