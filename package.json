@@ -8,7 +8,8 @@
     "start": "node server.js",
     "demo": "node scripts/seed-demo.js && node server.js",
     "reset": "node scripts/seed-demo.js --fresh",
-    "test": "node scripts/test.js"
+    "test": "node scripts/test.js",
+    "pdf": "node scripts/md-to-pdf.js docs/ЗАЩИТА.md"
   },
   "engines": {
     "node": ">=16"
