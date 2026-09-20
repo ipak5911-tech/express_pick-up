@@ -209,6 +209,11 @@
     'slots.commentPh': 'Например: без лука',
     'slots.toPay': 'К оплате',
     'slots.selected': 'Выдача в {t}',
+    'slots.chosenLabel': 'Вы забираете заказ в',
+    'slots.chosenNote': 'Кухня закончит заказ к этому времени. Готовка начнётся в {t}.',
+    'slots.legendFree': 'можно выбрать',
+    'slots.legendBusy': 'недоступно',
+    'slots.pickPrompt': 'Выберите время выдачи',
 
     'pay.h': 'Оплата и подтверждение',
     'pay.online': 'Оплатить онлайн',
@@ -607,6 +612,11 @@
     'slots.commentPh': 'e.g. no onions',
     'slots.toPay': 'To payment',
     'slots.selected': 'Pick-up at {t}',
+    'slots.chosenLabel': 'You collect your order at',
+    'slots.chosenNote': 'The kitchen will finish by then. Cooking starts at {t}.',
+    'slots.legendFree': 'available',
+    'slots.legendBusy': 'unavailable',
+    'slots.pickPrompt': 'Choose a pick-up time',
 
     'pay.h': 'Payment and confirmation',
     'pay.online': 'Pay online',

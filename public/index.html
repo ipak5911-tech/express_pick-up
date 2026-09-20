@@ -97,9 +97,17 @@
       </div>
 
       <div class="card">
-        <div class="row-between" style="margin-bottom:10px">
-          <span class="small muted" id="workloadNote"></span>
-          <span class="badge badge-brand" id="slotChosen" hidden></span>
+        <div class="slot-chosen-bar hidden" id="slotChosenBar">
+          <div>
+            <div class="lbl" data-i18n="slots.chosenLabel"></div>
+            <div class="big" id="slotChosenTime"></div>
+          </div>
+          <div style="flex:1 1 auto;min-width:0" class="small" id="slotChosenNote"></div>
+        </div>
+        <div class="slot-legend">
+          <span><i class="free"></i><span data-i18n="slots.legendFree"></span></span>
+          <span><i class="busy"></i><span data-i18n="slots.legendBusy"></span></span>
+          <span class="muted" id="workloadNote"></span>
         </div>
         <div class="slots" id="slotGrid"></div>
         <div class="empty hidden" id="slotEmpty" data-i18n="slots.none"></div>

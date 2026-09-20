@@ -866,12 +866,17 @@
       ]));
     }
 
-    const chosen = $('slotChosen');
+    // Выбранное время выносится отдельной полосой: в сетке из двух десятков
+    // клеток подсветка одной из них слишком легко теряется.
+    const bar = $('slotChosenBar');
     if (state.slot) {
-      chosen.hidden = false;
-      chosen.textContent = t('slots.selected', { t: state.slot.label });
+      bar.classList.remove('hidden');
+      $('slotChosenTime').textContent = state.slot.label;
+      $('slotChosenNote').textContent = state.slot.cookStart
+        ? t('slots.chosenNote', { t: hhmm(state.slot.cookStart) })
+        : '';
     } else {
-      chosen.hidden = true;
+      bar.classList.add('hidden');
     }
   }
 

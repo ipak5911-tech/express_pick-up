@@ -62,6 +62,12 @@
     const node = document.createElement(tag);
     for (const k of Object.keys(attrs || {})) {
       const v = attrs[k];
+      // ARIA-атрибуты проверяются до общего отсева: у них значение
+      // содержательно, и «false» — такое же валидное состояние, как «true».
+      if (k.startsWith('aria-')) {
+        if (v != null) node.setAttribute(k, String(v));
+        continue;
+      }
       if (v == null || v === false) continue;
       if (k === 'class') node.className = v;
       else if (k === 'html') node.innerHTML = v;
