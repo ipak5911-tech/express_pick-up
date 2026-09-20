@@ -9,7 +9,8 @@
     "demo": "node scripts/seed-demo.js && node server.js",
     "reset": "node scripts/seed-demo.js --fresh",
     "test": "node scripts/test.js",
-    "pdf": "node scripts/md-to-pdf.js docs/ЗАЩИТА.md"
+    "pdf": "node scripts/md-to-pdf.js docs/ЗАЩИТА.md",
+    "slides": "node scripts/make-slides.js"
   },
   "engines": {
     "node": ">=16"
