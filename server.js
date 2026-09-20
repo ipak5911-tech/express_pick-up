@@ -466,6 +466,8 @@ async function handleApi(req, res, pathname, query) {
       venue: { id: v.id, name: v.name, pickupPoint: v.pickupPoint },
       settings: v.settings,
       queue,
+      batches: orders.batches(store.orders().filter(o =>
+        o.venueId === v.id && ['new', 'cooking'].includes(o.status))),
       forecast: capacity.forecast(v, store.orders(), now),
       serverTime: new Date(now).toISOString()
     });

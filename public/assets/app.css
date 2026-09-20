@@ -447,3 +447,15 @@ table.tbl tr:last-child td { border-bottom: 0; }
   background: #2563eb; border: 3px solid #fff;
   box-shadow: 0 0 0 5px rgba(37, 99, 235, .25);
 }
+
+/* Сводка одинаковых позиций: то, что выгодно готовить одной партией */
+.batch {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 7px 12px;
+}
+.batch-hot { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.batch-qty { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.batch-hot .batch-qty { color: var(--ok); }
+.batch-name { font-size: 14px; font-weight: 600; }
+.batch-due { font-size: 11px; color: var(--text-faint); font-family: var(--mono); }

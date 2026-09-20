@@ -241,6 +241,15 @@ async function run() {
   r = await get('/api/kitchen/' + venueId);
   const queue = r.data.queue;
   ok(queue.some(o => o.code === code), `заказ в очереди кухни (${queue.length} всего)`);
+  ok(Array.isArray(r.data.batches) && r.data.batches.length > 0,
+    `сводка одинаковых позиций: ${r.data.batches.slice(0, 3).map(b => b.name + ' ×' + b.qty).join(', ')}`);
+  const totalInBatches = r.data.batches.reduce((sum, b) => sum + b.qty, 0);
+  const totalInQueue = queue.reduce((sum, o) => sum + o.lines.reduce((n, l) => n + l.qty, 0), 0);
+  ok(totalInBatches === totalInQueue,
+    `сводка учитывает все позиции очереди: ${totalInBatches} из ${totalInQueue}`);
+  const sortedBatches = r.data.batches.every((b, i) => i === 0 || r.data.batches[i - 1].qty >= b.qty);
+  ok(sortedBatches, 'сверху то, чего больше всего — его выгоднее готовить разом');
+
   const sorted = queue.every((o, i) => i === 0 ||
     new Date(queue[i - 1].cookStart || queue[i - 1].slotStart) <= new Date(o.cookStart || o.slotStart));
   ok(sorted, 'очередь отсортирована по времени начала готовки');

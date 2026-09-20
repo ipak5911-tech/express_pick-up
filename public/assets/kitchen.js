@@ -116,12 +116,41 @@
       `${t('kitchen.reserved')} ${data.settings.digitalSharePct}% \u00b7 ${capMin} ${t('common.min')} / ${data.settings.slotMinutes} ${t('common.min')}`;
   }
 
+  /**
+   * Сводка одинаковых позиций по всей очереди.
+   *
+   * Карточки заказов не дают увидеть, что борщ нужен сразу в четырёх из них.
+   * Эта панель отвечает повару на один вопрос: что выгодно приготовить разом.
+   * Позиции, встречающиеся в нескольких заказах, выделены — остальные фоном.
+   */
+  function renderBatches() {
+    const host = $('batchList');
+    host.innerHTML = '';
+    const rows = data.batches || [];
+    if (!rows.length) {
+      host.appendChild(el('span', { class: 'small faint', text: t('kitchen.batchEmpty') }));
+      return;
+    }
+    for (const b of rows) {
+      const batched = b.orders > 1;
+      host.appendChild(el('div', {
+        class: 'batch' + (batched ? ' batch-hot' : ''),
+        title: t('kitchen.work', { n: Math.max(1, Math.round(b.workSeconds / 60)) })
+      }, [
+        el('span', { class: 'batch-qty', text: '\u00d7' + b.qty }),
+        el('span', { class: 'batch-name', text: b.name }),
+        el('span', { class: 'batch-due', text: t('kitchen.batchDue', { t: hhmm(b.dueAt) }) })
+      ]));
+    }
+  }
+
   function render() {
     if (!data) return;
     $('venueLine').textContent = data.venue.name + ' · ' + data.venue.pickupPoint;
     $('queueCount').textContent = data.queue.length;
     $('queueEmpty').classList.toggle('hidden', data.queue.length > 0);
     renderForecast();
+    renderBatches();
 
     const host = $('queue');
     host.innerHTML = '';
