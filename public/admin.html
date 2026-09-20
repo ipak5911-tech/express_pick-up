@@ -28,6 +28,10 @@
 
   <!-- Метрики -->
   <section id="tab-metrics">
+    <div class="card hidden" id="demoBanner" style="border-color:var(--warn);background:var(--warn-soft);margin-bottom:12px">
+      <b data-i18n="admin.demoBannerH"></b>
+      <div class="small" style="margin-top:4px"><span data-i18n="admin.demoBannerBody"></span> <span id="demoSample"></span></div>
+    </div>
     <div class="grid grid-3" id="kpiGrid"></div>
 
     <div class="card" style="margin-top:14px">
@@ -112,6 +116,8 @@
         <span class="track"></span>
         <span data-i18n="admin.autoKitchen"></span>
       </label>
+      <button class="btn btn-primary btn-block btn-lg" id="demoShowcase" style="margin-bottom:12px" data-i18n="admin.demoShowcase"></button>
+      <p class="small muted" style="margin:-4px 0 14px" data-i18n="admin.demoShowcaseDesc"></p>
       <div class="grid grid-2">
         <button class="btn" id="demoRush" data-i18n="admin.demoRush"></button>
         <button class="btn" id="demoCounter" data-i18n="admin.demoCounter"></button>

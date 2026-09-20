@@ -598,7 +598,7 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, analytics.report(v, store.orders(), now, offset));
   }
 
-  // POST /api/demo/:venueId/(counter|rush|reset)
+  // POST /api/demo/:venueId/(showcase|counter|rush|history|reset)
   if (method === 'POST' && seg[1] === 'demo' && seg.length === 4) {
     const v = store.venue(seg[2]);
     if (!v) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');

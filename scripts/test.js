@@ -342,6 +342,34 @@ async function run() {
   ok(r.status === 409 && r.data.error === 'stop_list', 'стоп-лист блокирует заказ');
   await put(`/api/admin/${venueId}/menu/c-compote`, { available: true });
 
+  // ---------- демонстрация для жюри ----------
+  section('Детерминированная демонстрация');
+  const runShowcase = async () => {
+    await post(`/api/demo/${venueId}/showcase`);
+    const rep = await get(`/api/admin/${venueId}`);
+    return rep.data.report;
+  };
+
+  const first = await runShowcase();
+  const second = await runShowcase();
+  ok(JSON.stringify(first.kpi) === JSON.stringify(second.kpi),
+    `повторный запуск даёт те же KPI (p90=${second.kpi.p90WaitSeconds}с, рост=${second.kpi.throughputGainPct}%)`);
+
+  const k = second.kpi, tg = second.targets;
+  ok(k.p90WaitSeconds <= tg.p90WaitSeconds, `p90 ожидания ${k.p90WaitSeconds}с ≤ ${tg.p90WaitSeconds}с`);
+  ok(k.onTimePct >= tg.onTimePct, `готовы вовремя ${k.onTimePct}% ≥ ${tg.onTimePct}%`);
+  ok(k.expressSharePeakPct >= tg.expressSharePeakPct, `доля Express ${k.expressSharePeakPct}% ≥ ${tg.expressSharePeakPct}%`);
+  ok(k.throughputGainPct >= tg.throughputGainPct, `рост выдач ${k.throughputGainPct}% ≥ ${tg.throughputGainPct}%`);
+  ok(k.avgRating >= tg.avgRating, `оценка выдачи ${k.avgRating} ≥ ${tg.avgRating}`);
+  ok(k.p90WaitCounterSeconds > k.p90WaitSeconds * 5,
+    `касса заметно медленнее: ${Math.round(k.p90WaitCounterSeconds / 60)} мин против ${k.p90WaitSeconds}с`);
+
+  ok(second.meta && second.meta.demoData === true && second.meta.sampleSize > 0,
+    `отчёт помечен как симуляция, выборка ${second.meta.sampleSize}`);
+
+  r = await get(`/api/admin/${venueId}`);
+  ok(r.data.settings.autoKitchen === false, 'автопилот кухни выключен — статусы двигает человек');
+
   // ---------- устойчивость ----------
   section('Устойчивость');
   for (const badUrl of ['/%E0%A4%A', '/%', '/api/%ZZ']) {

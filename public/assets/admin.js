@@ -19,6 +19,12 @@
 
   function renderKpi() {
     const r = data.report;
+    const meta = r.meta || {};
+    const banner = $('demoBanner');
+    banner.classList.toggle('hidden', !meta.demoData && !meta.partiallyDemo);
+    $('demoSample').textContent = t('admin.demoSample', {
+      n: meta.sampleSize || 0, w: meta.waitSampleSize || 0
+    });
     const k = r.kpi;
     const host = $('kpiGrid');
     host.innerHTML = '';
@@ -378,6 +384,10 @@
     });
 
     $('saveSettings').onclick = saveSettings;
+    $('demoShowcase').onclick = async () => {
+      await demo('showcase');
+      showTab('metrics');
+    };
     $('demoRush').onclick = () => demo('rush');
     $('demoCounter').onclick = () => demo('counter');
     $('demoHistory').onclick = () => demo('history');
