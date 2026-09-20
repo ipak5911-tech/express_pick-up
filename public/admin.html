@@ -22,6 +22,7 @@
     <button type="button" data-tab="metrics" data-i18n="admin.tabMetrics" aria-pressed="true"></button>
     <button type="button" data-tab="menu" data-i18n="admin.tabMenu"></button>
     <button type="button" data-tab="capacity" data-i18n="admin.tabCapacity"></button>
+    <button type="button" data-tab="calibration" data-i18n="admin.tabCalibration"></button>
     <button type="button" data-tab="demo" data-i18n="admin.tabDemo"></button>
   </div>
 
@@ -72,6 +73,33 @@
         <span class="badge badge-brand" id="capacityResult"></span>
         <button class="btn btn-primary" id="saveSettings" data-i18n="common.save"></button>
       </div>
+    </div>
+  </section>
+
+  <!-- Калибровка -->
+  <section id="tab-calibration" class="hidden">
+    <div class="card">
+      <h3 data-i18n="cal.throughputH"></h3>
+      <p class="small muted" style="margin:0 0 10px" data-i18n="cal.throughputDesc"></p>
+      <div id="calThroughput"></div>
+    </div>
+
+    <div class="card">
+      <div class="row-between" style="flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0" data-i18n="cal.itemsH"></h3>
+        <button class="btn btn-sm btn-primary hidden" id="calApplyAll" type="button"></button>
+      </div>
+      <p class="small muted" style="margin:6px 0 10px" data-i18n="cal.itemsDesc"></p>
+      <table class="tbl">
+        <thead><tr>
+          <th data-i18n="admin.menuItem"></th>
+          <th style="width:90px" data-i18n="cal.colPlanned"></th>
+          <th style="width:90px" data-i18n="cal.colMeasured"></th>
+          <th style="width:70px" data-i18n="cal.colSamples"></th>
+          <th style="width:150px" data-i18n="cal.colVerdict"></th>
+        </tr></thead>
+        <tbody id="calBody"></tbody>
+      </table>
     </div>
   </section>
 

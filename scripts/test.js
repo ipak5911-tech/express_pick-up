@@ -293,6 +293,35 @@ async function run() {
   r = await post(`/api/kitchen/orders/${o3.id}/no-show`);
   ok(r.status === 200 && r.data.status === 'no_show', 'незабранный заказ снят с табло');
 
+  // ---------- калибровка ----------
+  section('Калибровка по замерам');
+  // Неделя истории: за один обед набрать статистику по каждой позиции нельзя
+  r = await post(`/api/demo/${venueId}/history`, { days: 7 });
+  ok(r.status === 200 && r.data.created > 100, `сгенерировано заказов за ${r.data.days} дней: ${r.data.created}`);
+  r = await get(`/api/admin/${venueId}/calibration`);
+  ok(r.status === 200 && Array.isArray(r.data.items), `позиций в отчёте калибровки: ${r.data.items.length}`);
+  ok(r.data.items.every(i => i.samples === 0 || i.observed > 0), 'у позиций с замерами есть измеренное значение');
+  const offItems = r.data.items.filter(i => ['underestimated', 'overestimated'].includes(i.verdict));
+  ok(offItems.length > 0,
+    `найдены расхождения: ${offItems.map(i => i.name + ' ' + (i.deltaPct > 0 ? '+' : '') + i.deltaPct + '%').join(', ')}`);
+  ok(offItems.every(i => i.samples >= r.data.minSamples),
+    `расхождения объявляются только при ${r.data.minSamples}+ замерах`);
+  ok(['too_early', 'no_data', 'matches', 'idle', 'kitchen_behind', 'underconfigured'].includes(r.data.throughput.verdict),
+    `вывод по производительности: ${r.data.throughput.verdict}`);
+
+  const target = offItems[0];
+  const before = target.current;
+  r = await post(`/api/admin/${venueId}/calibration/apply`, { items: [{ itemId: target.itemId, prepSeconds: target.suggested }] });
+  ok(r.status === 200 && r.data.applied.length === 1,
+    `значение принято: ${target.name} ${before}с → ${target.suggested}с`);
+  r = await get('/api/venues/' + venueId, false);
+  const updated = r.data.menu.find(i => i.id === target.itemId);
+  ok(updated.prepSeconds === target.suggested, 'новое время приготовления сохранено в меню');
+  await put(`/api/admin/${venueId}/menu/${target.itemId}`, { prepSeconds: before });
+
+  r = await post(`/api/admin/${venueId}/calibration/apply`, { items: [{ itemId: 'нет-такой', prepSeconds: 50 }] });
+  ok(r.data.applied.length === 0, 'несуществующая позиция игнорируется');
+
   // ---------- настройки ----------
   section('Настройки и стоп-лист');
   for (const bad of [{ kitchenThroughputPerMin: 0 }, { maxOrdersPerSlot: -5 },

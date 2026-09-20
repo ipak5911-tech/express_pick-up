@@ -223,6 +223,97 @@
     }
   }
 
+  // ---------- калибровка ----------
+  let calData = null;
+
+  const VERDICT_LABEL = {
+    matches: 'cal.matches', underestimated: 'cal.underestimated',
+    overestimated: 'cal.overestimated', few_samples: 'cal.fewSamples', no_data: 'cal.noData'
+  };
+  const VERDICT_CLASS = {
+    matches: 'badge-ok', underestimated: 'badge-warn',
+    overestimated: 'badge-warn', few_samples: 'badge', no_data: 'badge'
+  };
+  const THROUGHPUT_TEXT = {
+    too_early: 'cal.vTooEarly', no_data: 'cal.vNoData', matches: 'cal.vMatches',
+    idle: 'cal.vIdle', kitchen_behind: 'cal.vBehind', underconfigured: 'cal.vUnder'
+  };
+
+  async function loadCalibration() {
+    try {
+      calData = await api(`/api/admin/${encodeURIComponent(venueId)}/calibration`);
+      renderCalibration();
+    } catch (e) {
+      toast(e.message || t('common.error'), true);
+    }
+  }
+
+  async function applyItems(rows) {
+    if (!rows.length) return;
+    try {
+      const res = await api(`/api/admin/${encodeURIComponent(venueId)}/calibration/apply`, {
+        method: 'POST',
+        body: { items: rows.map(r => ({ itemId: r.itemId, prepSeconds: r.suggested })) }
+      });
+      toast(t('cal.applied', { n: res.applied.length }));
+      await loadCalibration();
+    } catch (e) {
+      toast(e.message || t('common.error'), true);
+    }
+  }
+
+  function renderCalibration() {
+    if (!calData) return;
+    const tp = calData.throughput;
+    const host = $('calThroughput');
+    host.innerHTML = '';
+    host.appendChild(el('div', { class: 'grid grid-4' }, [
+      kpiTile(t('cal.observed'), tp.observed + ' с/мин', t('cal.window') + ': ' + tp.windowLabel),
+      kpiTile(t('cal.configured'), tp.configured + ' с/мин', tp.orders + ' зак. за ' + (tp.elapsedMinutes || 0) + ' мин'),
+      kpiTile(t('cal.onTime'), tp.onTimePct == null ? '—' : tp.onTimePct + '%', t('admin.kpiOnTimeSub'),
+        tp.onTimePct == null ? null : tp.onTimePct >= 90)
+    ]));
+    host.appendChild(el('div', {
+      class: 'badge ' + (tp.verdict === 'matches' ? 'badge-ok' : tp.verdict === 'kitchen_behind' ? 'badge-danger' : 'badge-warn'),
+      style: 'margin-top:10px', text: t(THROUGHPUT_TEXT[tp.verdict] || 'cal.vNoData')
+    }));
+
+    const body = $('calBody');
+    body.innerHTML = '';
+    const actionable = calData.items.filter(i => ['underestimated', 'overestimated'].includes(i.verdict));
+
+    for (const row of calData.items) {
+      const canApply = ['underestimated', 'overestimated'].includes(row.verdict);
+      body.appendChild(el('tr', {}, [
+        el('td', {}, [
+          el('div', { text: row.name }),
+          el('div', { class: 'tiny faint', text: row.category })
+        ]),
+        el('td', { class: 'num', text: row.current + ' с' }),
+        el('td', { class: 'num', text: row.observed == null ? '—' : row.observed + ' с' }),
+        el('td', { class: 'num', text: String(row.samples) }),
+        el('td', {}, [
+          el('div', { class: 'row', style: 'gap:6px;flex-wrap:wrap' }, [
+            el('span', {
+              class: 'badge ' + (VERDICT_CLASS[row.verdict] || 'badge'),
+              text: t(VERDICT_LABEL[row.verdict]) + (row.deltaPct != null && canApply
+                ? ' ' + (row.deltaPct > 0 ? '+' : '') + row.deltaPct + '%' : '')
+            }),
+            canApply ? el('button', {
+              class: 'btn btn-sm', type: 'button', text: t('cal.apply'),
+              onclick: () => applyItems([row])
+            }) : null
+          ])
+        ])
+      ]));
+    }
+
+    const btn = $('calApplyAll');
+    btn.classList.toggle('hidden', actionable.length === 0);
+    btn.textContent = t('cal.applyAll', { n: actionable.length });
+    btn.onclick = () => applyItems(actionable);
+  }
+
   // ---------- демо ----------
   async function demo(action, confirmKey) {
     if (confirmKey && !confirm(t(confirmKey))) return;
@@ -243,11 +334,12 @@
     if (tab === 'metrics') { renderKpi(); renderHistogram(); renderLate(); }
     if (tab === 'menu') renderMenu();
     if (tab === 'capacity') renderSettings();
+    if (tab === 'calibration') loadCalibration();
   }
 
   function showTab(next) {
     tab = next;
-    for (const name of ['metrics', 'menu', 'capacity', 'demo']) {
+    for (const name of ['metrics', 'menu', 'capacity', 'calibration', 'demo']) {
       $('tab-' + name).classList.toggle('hidden', name !== next);
     }
     document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === next));

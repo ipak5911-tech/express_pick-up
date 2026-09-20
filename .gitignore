@@ -2,3 +2,7 @@ node_modules/
 data/db.json
 .DS_Store
 *.log
+
+# Секреты: ключи не должны попадать в репозиторий
+.env
+.env.local

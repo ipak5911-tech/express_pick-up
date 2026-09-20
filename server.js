@@ -7,7 +7,6 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const url = require('url');
 
 const store = require('./lib/store');
 const seed = require('./lib/seed');
@@ -17,6 +16,7 @@ const analytics = require('./lib/analytics');
 const qr = require('./lib/qr');
 const geo = require('./lib/geo');
 const poi = require('./lib/poi');
+const calibration = require('./lib/calibration');
 
 const PORT = Number(process.env.PORT) || 3000;
 // Экраны кухни, выдачи и панели закрыты коротким кодом. Это не полноценная
@@ -565,6 +565,31 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, item);
   }
 
+  // GET /api/admin/:venueId/calibration — сверка параметров с замерами
+  if (method === 'GET' && seg[1] === 'admin' && seg[3] === 'calibration' && seg.length === 4) {
+    const v = store.venue(seg[2]);
+    if (!v) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');
+    return sendJson(res, 200, calibration.report(v, store.orders(), now));
+  }
+
+  // POST /api/admin/:venueId/calibration/apply — принять предложенные значения
+  if (method === 'POST' && seg[1] === 'admin' && seg[3] === 'calibration' && seg[4] === 'apply') {
+    const v = store.venue(seg[2]);
+    if (!v) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');
+    const body = await readBody(req);
+    const list = Array.isArray(body.items) ? body.items : [];
+    const applied = [];
+    for (const row of list) {
+      const item = store.menuItem(v, row.itemId);
+      const value = Number(row.prepSeconds);
+      if (!item || !Number.isFinite(value) || value < 1 || value > 3600) continue;
+      applied.push({ itemId: item.id, was: item.prepSeconds, now: Math.round(value) });
+      item.prepSeconds = Math.round(value);
+    }
+    if (applied.length) store.save({ type: 'calibration_applied', venueId: v.id });
+    return sendJson(res, 200, { applied });
+  }
+
   // GET /api/admin/:venueId/report?day=-1
   if (method === 'GET' && seg[1] === 'admin' && seg[3] === 'report') {
     const v = store.venue(seg[2]);
@@ -579,7 +604,8 @@ async function handleApi(req, res, pathname, query) {
     if (!v) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');
     const demo = require('./lib/demo');
     try {
-      const result = demo.run(seg[3], v, now);
+      const body = await readBody(req);
+      const result = demo.run(seg[3], v, now, body || {});
       return sendJson(res, 200, result);
     } catch (e) {
       return sendError(res, 400, e.code || 'error', e.message);
@@ -617,12 +643,12 @@ const server = http.createServer(async (req, res) => {
   let pathname;
   let query;
   try {
-    // decodeURIComponent бросает URIError на битом проценте («/%E0%A4%A»).
-    // Раньше это происходило вне try и валило весь процесс: один запрос —
-    // и сервис лежит. Разбор адреса обязан быть внутри защищённого блока.
-    const parsed = url.parse(req.url, true);
+    // Разбор адреса обязан быть внутри защищённого блока: и конструктор URL,
+    // и decodeURIComponent бросают на битом проценте («/%E0%A4%A»). Раньше это
+    // происходило вне try и валило весь процесс — один запрос, и сервис лежит.
+    const parsed = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
     pathname = decodeURIComponent(parsed.pathname);
-    query = parsed.query;
+    query = Object.fromEntries(parsed.searchParams);
   } catch (e) {
     res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Некорректный адрес');
@@ -679,6 +705,20 @@ process.on('unhandledRejection', err => {
 
 if (require.main === module) {
   ensureSeed();
+
+  // Не сумев занять порт, сервис обязан упасть внятно. Иначе общий перехватчик
+  // ошибок оставляет мёртвый процесс жить, а отвечает старый экземпляр — и на
+  // запросы приходят ответы от кода, которого уже нет в файлах.
+  server.on('error', err => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(`\nПорт ${PORT} уже занят. Остановите запущенный сервер или задайте другой порт:`);
+      console.error(`  PORT=${PORT + 1} node server.js\n`);
+    } else {
+      console.error('Не удалось запустить сервер:', err && err.message);
+    }
+    process.exit(1);
+  });
+
   server.listen(PORT, () => {
     const addrs = ['localhost', ...localAddresses()];
     console.log('\n  Express Pick-Up — прототип запущен\n');
