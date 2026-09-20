@@ -7,6 +7,58 @@
   let stream = null;
   const $ = id => document.getElementById(id);
 
+  /**
+   * Новые заказы закрепляются сверху очереди.
+   *
+   * Очередь отсортирована по времени начала готовки, и это правильно для
+   * работы. Но заказ на дальний слот при таком порядке уходит вниз, и повар
+   * его не замечает — а на показе жюри вообще не видит, что заказ пришёл.
+   * Поэтому заказ, появившийся после загрузки экрана, держится сверху с
+   * пометкой, пока его не взяли в работу или пока не прошло пять минут.
+   */
+  const seen = new Set();
+  const fresh = new Map();          // id → когда появился на этом экране
+  const FRESH_MS = 5 * 60 * 1000;
+  let firstLoad = true;
+  let audioCtx = null;
+
+  function trackFresh(queue) {
+    let arrived = 0;
+    for (const o of queue) {
+      if (seen.has(o.id)) continue;
+      seen.add(o.id);
+      if (!firstLoad) { fresh.set(o.id, Date.now()); arrived++; }
+    }
+    firstLoad = false;
+    for (const [id, ts] of fresh) {
+      const o = queue.find(x => x.id === id);
+      if (!o || o.status !== 'new' || Date.now() - ts > FRESH_MS) fresh.delete(id);
+    }
+    if (arrived) beep();
+  }
+
+  /** Короткий сигнал о новом заказе — звук доступен только после клика по странице. */
+  function beep() {
+    if (!audioCtx) return;
+    try {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.frequency.value = 990;
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.2, audioCtx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.25);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.26);
+    } catch (e) { /* звук не критичен */ }
+  }
+
+  /** Свежие — сверху, новее выше; остальные — в рабочем порядке. */
+  function orderedQueue(queue) {
+    const pinned = queue.filter(o => fresh.has(o.id)).sort((a, b) => fresh.get(b.id) - fresh.get(a.id));
+    const rest = queue.filter(o => !fresh.has(o.id));
+    return pinned.concat(rest);
+  }
+
   function ticketClass(order) {
     if (order.status === 'ready') return 'ticket ready';
     const cookBy = new Date(order.cookStart || order.slotStart).getTime();
@@ -154,10 +206,12 @@
 
     const host = $('queue');
     host.innerHTML = '';
-    for (const order of data.queue) {
+    for (const order of orderedQueue(data.queue)) {
       const timing = timingLine(order);
       const action = actionFor(order);
-      host.appendChild(el('div', { class: ticketClass(order) }, [
+      const isFresh = fresh.has(order.id);
+      host.appendChild(el('div', { class: ticketClass(order) + (isFresh ? ' ticket-fresh' : '') }, [
+        isFresh ? el('div', { class: 'ticket-new', text: t('kitchen.newBadge') }) : null,
         el('div', { class: 'ticket-head' }, [
           el('span', { class: 'ticket-code', text: order.code }),
           el('span', { class: timing.cls, text: timing.text })
@@ -201,6 +255,7 @@
   async function refresh() {
     try {
       data = await api('/api/kitchen/' + encodeURIComponent(venueId));
+      trackFresh(data.queue);
       render();
     } catch (e) {
       toast(e.message || t('common.error'), true);
@@ -222,8 +277,17 @@
       venueId = select.value;
       storage.set('kitchenVenue', venueId);
       if (stream) stream.update(venueId);
+      seen.clear(); fresh.clear(); firstLoad = true;
       await refresh();
     };
+
+    document.addEventListener('pointerdown', () => {
+      if (audioCtx) return;
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) audioCtx = new Ctx();
+      } catch (e) { /* без звука */ }
+    }, { once: true });
 
     await refresh();
     stream = live(venueId, () => refresh());

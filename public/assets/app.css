@@ -459,3 +459,11 @@ table.tbl tr:last-child td { border-bottom: 0; }
 .batch-hot .batch-qty { color: var(--ok); }
 .batch-name { font-size: 14px; font-weight: 600; }
 .batch-due { font-size: 11px; color: var(--text-faint); font-family: var(--mono); }
+
+/* Новый заказ на кухне и только что готовый на выдаче: сверху и заметно */
+.ticket-fresh { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); position: relative; animation: fresh-in .5s ease; }
+.ticket-new { position: absolute; top: -10px; left: 12px; background: var(--brand); color: #fff;
+  font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 9px; border-radius: 999px; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+.board-fresh { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); animation: fresh-in .5s ease; }
+@keyframes fresh-in { from { transform: scale(.96); opacity: .4; } to { transform: none; opacity: 1; } }

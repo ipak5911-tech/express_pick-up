@@ -8,6 +8,34 @@
   const $ = id => document.getElementById(id);
 
   /**
+   * Только что готовые заказы — сверху табло.
+   * Список идёт по времени готовности, и новый готовый заказ вставал в конец:
+   * сотрудник за стойкой и гость у табло его не замечали. Пока заказ не
+   * выдан и не прошло пять минут, он держится сверху с пометкой.
+   */
+  const seenReady = new Set();
+  const freshReady = new Map();
+  const FRESH_MS = 5 * 60 * 1000;
+  let firstLoad = true;
+
+  function trackFresh(ready) {
+    for (const o of ready) {
+      if (seenReady.has(o.id)) continue;
+      seenReady.add(o.id);
+      if (!firstLoad) freshReady.set(o.id, Date.now());
+    }
+    firstLoad = false;
+    for (const [id, ts] of freshReady) {
+      if (!ready.some(o => o.id === id) || Date.now() - ts > FRESH_MS) freshReady.delete(id);
+    }
+  }
+
+  function orderedReady(ready) {
+    const pinned = ready.filter(o => freshReady.has(o.id)).sort((a, b) => freshReady.get(b.id) - freshReady.get(a.id));
+    return pinned.concat(ready.filter(o => !freshReady.has(o.id)));
+  }
+
+  /**
    * Выдача без сканирования — запасной путь.
    *
    * Основной способ подтверждения — QR гостя: сотрудник сканирует код, и
@@ -34,8 +62,10 @@
     const ready = $('readyList');
     ready.innerHTML = '';
     $('readyEmpty').classList.toggle('hidden', data.ready.length > 0);
-    for (const o of data.ready) {
-      ready.appendChild(el('div', { class: 'board-code' }, [
+    for (const o of orderedReady(data.ready)) {
+      const isFresh = freshReady.has(o.id);
+      ready.appendChild(el('div', { class: 'board-code' + (isFresh ? ' board-fresh' : '') }, [
+        isFresh ? el('div', { class: 'badge badge-brand', style: 'margin-bottom:6px', text: t('pickup.newBadge') }) : null,
         el('div', { class: 'c', text: o.code }),
         el('div', { class: 'tiny faint', style: 'margin-top:4px', text: o.guestName || t('pickup.ready') }),
         o.arrivedAt ? el('div', { class: 'badge badge-ok', style: 'margin-top:6px', text: t('pickup.guestHere') }) : null,
@@ -79,6 +109,7 @@
   async function refresh() {
     try {
       data = await api('/api/pickup/' + encodeURIComponent(venueId));
+      trackFresh(data.ready);
       render();
     } catch (e) {
       toast(e.message || t('common.error'), true);
@@ -100,6 +131,7 @@
       venueId = select.value;
       storage.set('kitchenVenue', venueId);
       if (stream) stream.update(venueId);
+      seenReady.clear(); freshReady.clear(); firstLoad = true;
       await refresh();
     };
 
