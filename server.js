@@ -619,6 +619,22 @@ async function handleApi(req, res, pathname, query) {
     try {
       const body = await readBody(req);
       const result = demo.run(seg[3], v, now, body || {});
+      // Подготовка показа сразу возвращает получившиеся KPI: их проверяют
+      // перед выходом на сцену, а не идут за ними в панель.
+      if (seg[3] === 'showcase') {
+        const r = analytics.report(v, store.orders(), now);
+        result.venueId = v.id;
+        result.serviceHours = v.settings.serviceHours;
+        result.report = {
+          p90WaitSeconds: r.kpi.p90WaitSeconds,
+          p90WaitCounterSeconds: r.kpi.p90WaitCounterSeconds,
+          onTimePct: r.kpi.onTimePct,
+          throughputGainPct: r.kpi.throughputGainPct,
+          expressSharePeakPct: r.kpi.expressSharePeakPct,
+          avgRating: r.kpi.avgRating,
+          sampleSize: r.meta.sampleSize
+        };
+      }
       return sendJson(res, 200, result);
     } catch (e) {
       return sendError(res, 400, e.code || 'error', e.message);

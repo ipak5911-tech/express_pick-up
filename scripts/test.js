@@ -369,6 +369,25 @@ async function run() {
 
   r = await get(`/api/admin/${venueId}`);
   ok(r.data.settings.autoKitchen === false, 'автопилот кухни выключен — статусы двигает человек');
+  ok(r.data.settings.serviceHours.from === '00:00' && r.data.settings.serviceHours.to === '23:59',
+    'часы работы расширены на сутки — показ не упрётся в закрытое заведение');
+
+  const prep = await post(`/api/demo/${venueId}/showcase`);
+  ok(prep.data.report && prep.data.report.p90WaitSeconds <= 120,
+    `подготовка сразу возвращает KPI: p90 ${prep.data.report.p90WaitSeconds}с`);
+  ok(prep.data.breakdown.freeSlots >= 3,
+    `для заказа жюри оставлено свободных интервалов: ${prep.data.breakdown.freeSlots}`);
+  ok(second.meta.demoOrders === second.meta.sampleSize && second.meta.realOrders === 0,
+    `все заказы помечены демонстрационными: ${second.meta.demoOrders} из ${second.meta.sampleSize}`);
+
+  // Гарантированный стресс-тест: закрывает именно ближайший слот
+  const st = (await post(`/api/demo/${venueId}/stress`)).data;
+  ok(st.targetSlot && st.created > 0 && st.created <= 12,
+    `нагрузка на слот ${st.targetSlot}: ${st.created} заказов, предел 12 соблюдён`);
+  ok(st.closedSlots.includes(st.targetSlot),
+    `целевой слот ${st.targetSlot} действительно закрылся`);
+  ok(st.nextAvailable && st.nextAvailable > st.targetSlot,
+    `предложена альтернатива позже: ${st.nextAvailable}`);
 
   // Стресс-тест: жюри создаёт наплыв и видит, что времена закрываются
   await post(`/api/demo/${venueId}/showcase`);
