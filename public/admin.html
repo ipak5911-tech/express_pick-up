@@ -23,6 +23,7 @@
     <button type="button" data-tab="menu" data-i18n="admin.tabMenu"></button>
     <button type="button" data-tab="capacity" data-i18n="admin.tabCapacity"></button>
     <button type="button" data-tab="calibration" data-i18n="admin.tabCalibration"></button>
+    <button type="button" data-tab="mail" data-i18n="admin.tabMail"></button>
     <button type="button" data-tab="demo" data-i18n="admin.tabDemo"></button>
   </div>
 
@@ -108,6 +109,18 @@
   </section>
 
   <!-- Демо -->
+  <section id="tab-mail" class="hidden">
+    <div class="card">
+      <p class="small muted" style="margin:0 0 10px" data-i18n="admin.mailDesc"></p>
+      <div id="mailStatus" class="small" style="margin-bottom:12px"></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <input type="email" id="mailTestTo" data-i18n-ph="admin.mailTestPh" style="flex:1 1 220px;min-width:0">
+        <button class="btn" id="mailTest" type="button" data-i18n="admin.mailTest"></button>
+      </div>
+      <div id="mailList"></div>
+    </div>
+  </section>
+
   <section id="tab-demo" class="hidden">
     <div class="card">
       <p class="small muted" style="margin:0 0 12px" data-i18n="admin.demoDesc"></p>

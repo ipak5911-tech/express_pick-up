@@ -980,10 +980,13 @@
           payment: state.payment,
           name: $('guestName').value.trim(),
           phone: $('guestPhone').value.trim(),
+          email: $('guestEmail').value.trim(),
+          lang: window.I18N.lang,
           comment: $('guestComment').value.trim()
         }
       });
       storage.set('lastOrder', { venueId: state.venue.id, items: cartPayload() });
+      storage.set('guestEmail', $('guestEmail').value.trim());
       const tokens = storage.get('tokens', []);
       tokens.unshift(data.order.token);
       storage.set('tokens', tokens.slice(0, 10));
@@ -991,6 +994,7 @@
     } catch (e) {
       state.busy = false;
       const map = {
+        bad_email: t('slots.emailBad'),
         kitchen_full: t('slots.busyKitchen'),
         handoff_full: t('slots.busyHandoff'),
         slot_passed: t('slots.none'),
@@ -1112,6 +1116,7 @@
     mountHeader('guest');
     window.I18N.apply();
     bind();
+    $('guestEmail').value = storage.get('guestEmail', '');
     try {
       await loadVenues();
       await loadAreas();

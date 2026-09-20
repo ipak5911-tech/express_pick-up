@@ -171,6 +171,35 @@
     ]));
   }
 
+  /** Подписка на письма уже после оформления — тем, кто не указал почту сразу. */
+  function emailForm() {
+    const input = el('input', {
+      type: 'email', inputmode: 'email', autocomplete: 'email',
+      placeholder: t('order.emailPh'), value: storage.get('guestEmail', ''), style: 'flex:1 1 180px;min-width:0'
+    });
+    const button = el('button', {
+      class: 'btn btn-sm', type: 'button', text: t('order.emailSubscribe'),
+      onclick: async () => {
+        const email = input.value.trim();
+        if (!email) { input.focus(); return; }
+        button.disabled = true;
+        try {
+          order = await api(`/api/orders/${token}/email`, { method: 'POST', body: { email, lang: window.I18N.lang } });
+          storage.set('guestEmail', email);
+          toast(t('order.emailSaved'));
+          render();
+        } catch (e) {
+          button.disabled = false;
+          toast(e.error === 'bad_email' ? t('order.emailBad') : (e.message || t('common.error')), true);
+        }
+      }
+    });
+    return el('div', { class: 'card email-card' }, [
+      el('div', { class: 'small', style: 'margin-bottom:8px', text: t('order.emailLead') }),
+      el('div', { class: 'row', style: 'gap:8px;flex-wrap:wrap' }, [input, button])
+    ]);
+  }
+
   function render() {
     const host = document.getElementById('content');
     host.innerHTML = '';
@@ -292,6 +321,13 @@
             class: 'btn btn-block', type: 'button', text: t('order.notifyMe'),
             onclick: enableAlerts
           }));
+    }
+
+    // Письма о статусе: вкладку можно закрыть — ссылка придёт на почту.
+    if (['new', 'cooking', 'ready'].includes(order.status)) {
+      actions.appendChild(order.email
+        ? el('div', { class: 'badge badge-ok', style: 'align-self:center;white-space:normal;text-align:center', text: t('order.emailOn', { email: order.email }) })
+        : emailForm());
     }
 
     if (['new', 'cooking', 'ready'].includes(order.status)) {

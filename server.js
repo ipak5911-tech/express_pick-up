@@ -12,6 +12,8 @@ const store = require('./lib/store');
 const seed = require('./lib/seed');
 const capacity = require('./lib/capacity');
 const orders = require('./lib/orders');
+const mail = require('./lib/mail');
+const notify = require('./lib/notify');
 const analytics = require('./lib/analytics');
 const qr = require('./lib/qr');
 const geo = require('./lib/geo');
@@ -151,6 +153,16 @@ function broadcast(event) {
 }
 
 store.bus.on('change', broadcast);
+
+// Письма гостю о ходе заказа. Ссылка в письме должна открываться с телефона,
+// поэтому localhost заменяется адресом в локальной сети (или PUBLIC_URL).
+notify.start({
+  baseUrl: () => {
+    if (process.env.PUBLIC_URL) return String(process.env.PUBLIC_URL).replace(/\/+$/, '');
+    const lan = localAddresses()[0];
+    return `http://${lan || 'localhost'}:${PORT}`;
+  }
+});
 
 // ---------- публичное представление заведения ----------
 function venuePublic(v) {
@@ -389,7 +401,7 @@ async function handleApi(req, res, pathname, query) {
       return sendJson(res, 201, { order: orders.publicView(order, v), statusUrl: `/o/${order.token}` });
     } catch (e) {
       if (e instanceof orders.OrderError || e.code) {
-        const status = ['unknown_venue'].includes(e.code) ? 404 : 409;
+        const status = ['unknown_venue'].includes(e.code) ? 404 : e.code === 'bad_email' ? 400 : 409;
         return sendError(res, status, e.code, e.message, { itemId: e.itemId, groupId: e.groupId });
       }
       throw e;
@@ -432,9 +444,13 @@ async function handleApi(req, res, pathname, query) {
       } else if (action === 'rate') {
         const body = await readBody(req);
         orders.rate(o, body.rating);
+      } else if (action === 'email') {
+        // подписка на письма уже после оформления — с той же приватной ссылки
+        const body = await readBody(req);
+        orders.setEmail(o, body.email, body.lang);
       } else return sendError(res, 404, 'unknown_action', 'Действие не найдено');
     } catch (e) {
-      return sendError(res, 409, e.code || 'error', e.message);
+      return sendError(res, e.code === 'bad_email' ? 400 : 409, e.code || 'error', e.message);
     }
     return sendJson(res, 200, orders.publicView(o, store.venue(o.venueId)));
   }
@@ -568,6 +584,27 @@ async function handleApi(req, res, pathname, query) {
       capacityPerSlotSeconds: capacity.slotCapacitySeconds(v.settings),
       report: analytics.report(v, store.orders(), now)
     });
+  }
+
+  // GET /api/admin/:venueId/mail — журнал писем гостям и состояние SMTP
+  if (method === 'GET' && seg[1] === 'admin' && seg[3] === 'mail' && seg.length === 4) {
+    if (!store.venue(seg[2])) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');
+    return sendJson(res, 200, { mail: mail.status(), items: mail.listFor(seg[2]) });
+  }
+
+  // POST /api/admin/:venueId/mail/test — проверочное письмо на указанный адрес
+  if (method === 'POST' && seg[1] === 'admin' && seg[3] === 'mail' && seg[4] === 'test') {
+    const v = store.venue(seg[2]);
+    if (!v) return sendError(res, 404, 'unknown_venue', 'Заведение не найдено');
+    const body = await readBody(req);
+    if (!mail.isEmail(body.to)) return sendError(res, 400, 'bad_email', 'Проверьте адрес почты');
+    const entry = await mail.send({
+      to: String(body.to).trim(), event: 'test', venueId: v.id,
+      subject: `Express Pick-Up: проверка почты — ${v.name}`,
+      text: `Письма из Express Pick-Up доходят. Заведение: ${v.name}, ${v.address}.`,
+      html: `<p>Письма из <b>Express Pick-Up</b> доходят.</p><p>Заведение: ${v.name}, ${v.address}.</p>`
+    });
+    return sendJson(res, entry.status === 'failed' ? 502 : 200, { ok: entry.status !== 'failed', entry });
   }
 
   // PUT /api/admin/:venueId/settings

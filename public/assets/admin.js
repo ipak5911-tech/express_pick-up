@@ -332,6 +332,68 @@
     }
   }
 
+  // ---------- почта ----------
+  const MAIL_STATUS_CLASS = { sent: 'badge-ok', logged: 'badge-brand', failed: 'badge-danger', skipped: '', queued: 'badge-warn' };
+
+  async function loadMail() {
+    try {
+      const res = await api(`/api/admin/${encodeURIComponent(venueId)}/mail`);
+      renderMail(res);
+    } catch (e) {
+      toast(e.message || t('common.error'), true);
+    }
+  }
+
+  function renderMail(res) {
+    const m = res.mail;
+    $('mailStatus').innerHTML = '';
+    $('mailStatus').appendChild(m.transport === 'smtp'
+      ? el('span', {}, [
+          el('span', { class: 'badge badge-ok', text: t('admin.mailSmtpOn') }),
+          el('span', { class: 'muted', style: 'margin-left:8px', text: `${m.host}:${m.port} · ${m.from}` })
+        ])
+      : el('span', {}, [
+          el('span', { class: 'badge badge-warn', text: t('admin.mailSmtpOff') }),
+          el('span', { class: 'muted', style: 'margin-left:8px', text: t('admin.mailSmtpOffHint') })
+        ]));
+
+    const host = $('mailList');
+    host.innerHTML = '';
+    if (!res.items.length) {
+      host.appendChild(el('div', { class: 'small muted', text: t('admin.mailEmpty') }));
+      return;
+    }
+    const table = el('table', { class: 'tbl' }, [
+      el('thead', {}, [el('tr', {}, ['admin.mailWhen', 'admin.mailTo', 'admin.mailSubject', 'admin.mailState']
+        .map(k => el('th', { text: t(k) })))]),
+      el('tbody', {}, res.items.map(item => el('tr', {}, [
+        el('td', { class: 'num', text: hhmm(item.at) + (item.orderCode ? ' · №' + item.orderCode : '') }),
+        el('td', { text: item.to }),
+        el('td', { text: item.subject, title: item.preview || '' }),
+        el('td', {}, [
+          el('span', { class: 'badge ' + (MAIL_STATUS_CLASS[item.status] || ''), text: t('admin.mail_' + item.status) }),
+          item.error ? el('div', { class: 'tiny faint', text: item.error }) : null
+        ])
+      ])))
+    ]);
+    host.appendChild(table);
+  }
+
+  async function sendTestMail() {
+    const to = $('mailTestTo').value.trim();
+    if (!to) { $('mailTestTo').focus(); return; }
+    $('mailTest').disabled = true;
+    try {
+      const res = await api(`/api/admin/${encodeURIComponent(venueId)}/mail/test`, { method: 'POST', body: { to } });
+      toast(t(res.entry.status === 'sent' ? 'admin.mailTestSent' : 'admin.mailTestLogged'));
+    } catch (e) {
+      toast(e.entry && e.entry.error ? e.entry.error : (e.message || t('common.error')), true);
+    } finally {
+      $('mailTest').disabled = false;
+      loadMail();
+    }
+  }
+
   // ---------- общий рендер ----------
   function render() {
     if (!data) return;
@@ -341,11 +403,12 @@
     if (tab === 'menu') renderMenu();
     if (tab === 'capacity') renderSettings();
     if (tab === 'calibration') loadCalibration();
+    if (tab === 'mail') loadMail();
   }
 
   function showTab(next) {
     tab = next;
-    for (const name of ['metrics', 'menu', 'capacity', 'calibration', 'demo']) {
+    for (const name of ['metrics', 'menu', 'capacity', 'calibration', 'mail', 'demo']) {
       $('tab-' + name).classList.toggle('hidden', name !== next);
     }
     document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === next));
@@ -384,6 +447,7 @@
     });
 
     $('saveSettings').onclick = saveSettings;
+    $('mailTest').onclick = sendTestMail;
     $('demoShowcase').onclick = async () => {
       await demo('showcase');
       showTab('metrics');
@@ -404,7 +468,10 @@
     };
 
     await refresh();
-    stream = live(venueId, () => { if (tab === 'metrics') refresh(); });
+    stream = live(venueId, ev => {
+      if (tab === 'metrics') refresh();
+      if (tab === 'mail' && ev && ev.type === 'mail') loadMail();
+    });
     setInterval(() => { if (tab === 'metrics') refresh(); }, 30000);
     document.addEventListener('langchange', render);
   }

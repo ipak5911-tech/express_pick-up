@@ -63,7 +63,8 @@ const put = (p, body, pin) => request('PUT', p, body, pin);
 function startServer() {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-      env: Object.assign({}, process.env, { PORT: String(PORT), EPU_DB_FILE: DB_FILE, STAFF_PIN: PIN }),
+      // письма в тестах никуда не уходят — только в журнал, который и проверяется
+      env: Object.assign({}, process.env, { PORT: String(PORT), EPU_DB_FILE: DB_FILE, STAFF_PIN: PIN, MAIL_TRANSPORT: 'outbox' }),
       stdio: ['ignore', 'pipe', 'pipe']
     });
     let settled = false;
@@ -325,6 +326,63 @@ async function run() {
 
   r = await get('/api/orders/' + qrToken, false);
   ok(r.data.status === 'picked_up', 'гость видит, что заказ выдан');
+
+  // ---------- письма гостю ----------
+  section('Письма гостю');
+  const mailItems = { items: [{ itemId: 'c-compote', qty: 2, options: [] }] };
+  r = await post(`/api/venues/${venueId}/slots`, mailItems, false);
+  const mailSlot = r.data.slots.find(x => x.available);
+  r = await post(`/api/venues/${venueId}/orders`,
+    Object.assign({ slotStart: mailSlot.start, payment: 'online', name: 'Айгерим', email: 'не-адрес' }, mailItems), false);
+  ok(r.status === 400 && r.data.error === 'bad_email', 'кривая почта отклонена до создания заказа');
+
+  r = await post(`/api/venues/${venueId}/orders`,
+    Object.assign({ slotStart: mailSlot.start, payment: 'online', name: 'Айгерим', email: ' Guest@Example.COM ', lang: 'en' }, mailItems), false);
+  ok(r.status === 201 && r.data.order.email === 'guest@example.com', 'почта сохранена и нормализована');
+  const mailToken = r.data.order.token;
+  const mailCode = r.data.order.code;
+  await new Promise(res => setTimeout(res, 250));
+
+  r = await get(`/api/admin/${venueId}/mail`, false);
+  ok(r.status === 401, 'журнал писем закрыт кодом персонала');
+  r = await get(`/api/admin/${venueId}/mail`);
+  ok(r.status === 200 && r.data.mail.transport === 'outbox', 'в тестах письма только записываются');
+  let letter = r.data.items.find(m => m.orderCode === mailCode && m.event === 'accepted');
+  ok(!!letter && letter.to === 'guest@example.com' && letter.status === 'logged', 'письмо «заказ принят» записано');
+  ok(!!letter && letter.preview.includes(`/o/${mailToken}`), 'в письме есть приватная ссылка на живой статус');
+  ok(!!letter && /accepted/i.test(letter.subject), 'язык письма — язык гостя (en)');
+
+  r = await get('/api/kitchen/' + venueId);
+  const mailOrder = r.data.queue.find(o => o.code === mailCode);
+  await post(`/api/kitchen/orders/${mailOrder.id}/advance`);
+  await new Promise(res => setTimeout(res, 250));
+  r = await get(`/api/admin/${venueId}/mail`);
+  ok(!r.data.items.some(m => m.orderCode === mailCode && m.event === 'cooking'), '«готовится» письмом не рассылается');
+  await post(`/api/kitchen/orders/${mailOrder.id}/advance`);
+  await new Promise(res => setTimeout(res, 250));
+  r = await get(`/api/admin/${venueId}/mail`);
+  letter = r.data.items.find(m => m.orderCode === mailCode && m.event === 'ready');
+  ok(!!letter && /ready/i.test(letter.subject), 'письмо «заказ готов» ушло при готовности');
+
+  // подписка со страницы заказа — для тех, кто не указал почту сразу
+  r = await post(`/api/venues/${venueId}/orders`, Object.assign({ slotStart: mailSlot.start, payment: 'onsite' }, mailItems), false);
+  const lateToken = r.data.order.token;
+  const lateCode = r.data.order.code;
+  r = await post(`/api/orders/${lateToken}/email`, { email: 'oops' }, false);
+  ok(r.status === 400 && r.data.error === 'bad_email', 'подписка с кривой почтой отклонена');
+  r = await post(`/api/orders/${lateToken}/email`, { email: 'late@example.com', lang: 'ru' }, false);
+  ok(r.status === 200 && r.data.email === 'late@example.com', 'почту можно указать после оформления');
+  await new Promise(res => setTimeout(res, 250));
+  r = await get(`/api/admin/${venueId}/mail`);
+  letter = r.data.items.find(m => m.orderCode === lateCode);
+  ok(!!letter && letter.event === 'accepted' && /принят/.test(letter.subject), 'после подписки сразу уходит письмо о текущем статусе');
+
+  r = await post(`/api/admin/${venueId}/mail/test`, { to: 'staff@example.com' });
+  ok(r.status === 200 && r.data.entry.status === 'logged', 'проверочное письмо из панели записано');
+
+  const mailLib = require('../lib/mail');
+  const raw = mailLib.buildMessage({ from: 'Express Pick-Up <a@b.kz>', to: 'g@x.kz', subject: 'Заказ №101 готов', text: 'т', html: '<b>т</b>', messageId: 'x1' });
+  ok(/^Subject: =\?UTF-8\?B\?/m.test(raw) && /multipart\/alternative/.test(raw), 'тема в UTF-8 закодирована, письмо с текстом и HTML');
 
   // ---------- сценарии сбоев ----------
   section('Сценарии сбоев');
